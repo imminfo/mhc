@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import print_function, division
 from keras.models import Model, load_model
 from keras.layers import Dense, Activation, Dropout
 from keras.layers import LSTM, GRU, Bidirectional, Input, Conv1D
@@ -8,6 +8,7 @@ from keras.layers.pooling import MaxPooling1D
 from keras.layers.normalization import BatchNormalization
 from keras.layers.embeddings import Embedding
 from keras.layers.merge import concatenate
+from keras.layers.advanced_activations import PReLU
 from keras.utils.data_utils import get_file
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 import shutil
@@ -21,6 +22,8 @@ import theano
 from scipy import sparse
 from sklearn.metrics import mean_squared_error, f1_score, roc_auc_score, confusion_matrix
 import keras.backend as K
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pylab
@@ -33,6 +36,7 @@ BIND_THR = 1 - np.log(500) / np.log(50000)
 VERBOSE=2
 BATCH_SIZE=32
 EPOCHS=500
+POOL_SIZE=2
 
 #theano.config.floatX="float32"
 #theano.config.device="gpu1"
@@ -166,56 +170,82 @@ print(X_pep_test.shape)
 print(X_mhc_test.shape)
 
 
-X_pep_train = X_pep_train.reshape((X_pep_train.shape[0], X_pep_train.shape[1] * X_pep_train.shape[2]))
-X_mhc_train = X_mhc_train.reshape((X_mhc_train.shape[0], X_mhc_train.shape[1] * X_mhc_train.shape[2]))
-X_pep_test = X_pep_test.reshape((X_pep_test.shape[0], X_pep_test.shape[1] * X_pep_test.shape[2]))
-X_mhc_test = X_mhc_test.reshape((X_mhc_test.shape[0], X_mhc_test.shape[1] * X_mhc_test.shape[2]))
+# X_pep_train = X_pep_train.reshape((X_pep_train.shape[0], X_pep_train.shape[1] * X_pep_train.shape[2]))
+# X_mhc_train = X_mhc_train.reshape((X_mhc_train.shape[0], X_mhc_train.shape[1] * X_mhc_train.shape[2]))
+# X_pep_test = X_pep_test.reshape((X_pep_test.shape[0], X_pep_test.shape[1] * X_pep_test.shape[2]))
+# X_mhc_test = X_mhc_test.reshape((X_mhc_test.shape[0], X_mhc_test.shape[1] * X_mhc_test.shape[2]))
+
+X_train = np.hstack([X_pep_train, X_mhc_train])
+X_test = np.hstack([X_pep_test, X_mhc_test])
 
 
 ###################
 # Build the model #
 ###################
-def make_model(dir_name):
+def make_model2(dir_name):
     mhc_in = Input(shape=(34*20,))
-    mhc_branch = Dense(128, activation="softmax")(mhc_in)
-    mhc_branch = Dropout(.3)(mhc_branch)
-    mhc_branch = Dense(64, activation="softmax")(mhc_branch)
-    mhc_branch = Dropout(.3)(mhc_branch)
-    mhc_branch = Dense(16, activation="softmax")(mhc_branch)
-    mhc_branch = Dropout(.3)(mhc_branch)
-    # mhc_branch = Conv1D(8, 3, activation="relu")(mhc_in)
-    # mhc_branch = BatchNormalization()(mhc_branch)
-    # mhc_branch = MaxPooling1D()(mhc_branch)
-    # mhc_branch = Flatten()(mhc_branch)
-    # mhc_branch = Conv1D(32, 3, activation="relu")(mhc_in)
-    # mhc_branch = BatchNormalization()(mhc_branch)
-    # mhc_branch = Flatten()(mhc_branch)
-    # mhc_branch = MaxPooling1D()(mhc_branch)
+    mhc_branch = Conv1D(32, 5)(mhc_in)
+    mhc_branch = PReLU()(mhc_branch)
+    mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
+    
+    mhc_branch = Conv1D(64, 3)(mhc_branch)
+    mhc_branch = PReLU()(mhc_branch)
+    mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
+    
     
     pep_in = Input(shape=(15*20,))
-    pep_branch = Dense(64, activation="softmax")(pep_in)
-    pep_branch = Dropout(.3)(pep_branch)
-    pep_branch = Dense(16, activation="softmax")(pep_branch)
-    pep_branch = Dropout(.3)(pep_branch)
-    pep_branch = Dense(8, activation="softmax")(pep_branch)
-    pep_branch = Dropout(.3)(pep_branch)
-    # pep_branch = Conv1D(8, 3, activation="relu")(pep_in)
-    # pep_branch = BatchNormalization()(pep_branch)
-    # pep_branch = MaxPooling1D()(pep_branch)
+    pep_branch = Conv1D(32, 5)(pep_in)
+    pep_branch = PReLU()(pep_branch)
+    pep_branch = MaxPooling1D(pool_size=POOL_SIZE)(pep_branch)
+    
+    pep_branch = Conv1D(64, 3)(pep_branch)
+    pep_branch = PReLU()(pep_branch)
+    pep_branch = MaxPooling1D(pool_size=POOL_SIZE)(pep_branch)
+    
+    
+    # mhc_branch = Flatten()(mhc_branch)
     # pep_branch = Flatten()(pep_branch)
-    # pep_branch = Conv1D(32, 3, activation="relu")(pep_in)
-    # pep_branch = BatchNormalization()(pep_branch)
-    # pep_branch = Flatten()(pep_branch)
-    # pep_branch = MaxPooling1D()(pep_branch)
 
+    
     merged = concatenate([pep_branch, mhc_branch])
-    merged = Dense(16)(merged)
+    merged = Dense(128)(merged)
+    merged = Dropout(.3)(merged)
+    merged = Dense(64)(merged)
     merged = Dropout(.3)(merged)
     merged = Dense(8)(merged)
     merged = Dropout(.3)(merged)
     pred = Dense(1, activation="relu")(merged)
 
     model = Model([mhc_in, pep_in], pred)
+    model.compile(loss='mse', optimizer="nadam")
+    
+    with open(dir_name + "model.json", "w") as outf:
+        outf.write(model.to_json())
+        
+    return model
+
+
+def make_model(dir_name):
+    mhc_in = Input(shape=(49,20))
+    mhc_branch = Conv1D(32, 5)(mhc_in)
+    mhc_branch = PReLU()(mhc_branch)
+    mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
+    
+    mhc_branch = Conv1D(64, 3)(mhc_branch)
+    mhc_branch = PReLU()(mhc_branch)
+    mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
+    
+    mhc_branch = Flatten()(mhc_branch)
+    
+    mhc_branch = Dense(128)(mhc_branch)
+    mhc_branch = Dropout(.3)(mhc_branch)
+    mhc_branch = Dense(64)(mhc_branch)
+    mhc_branch = Dropout(.3)(mhc_branch)
+    mhc_branch = Dense(8)(mhc_branch)
+    mhc_branch = Dropout(.3)(mhc_branch)
+    pred = Dense(1, activation="relu")(mhc_branch)
+
+    model = Model(mhc_in, pred)
     model.compile(loss='mse', optimizer="nadam")
     
     with open(dir_name + "model.json", "w") as outf:
@@ -251,9 +281,20 @@ print(model.summary())
 ###################
 # Train the model #
 ###################
+def generate_batch(X_list, y):
+    pass
+
+
+
 print("Training...")
 for epoch in range(1, EPOCHS+1):
-    history = model.fit([X_mhc_train, X_pep_train],
+    # history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train), 
+    #                               steps_per_epoch = int(X_mhc_train.shape[0] / BATCH_SIZE),
+    #                               epochs=epoch, 
+    #                               verbose=VERBOSE, 
+    #                               initial_epoch=epoch-1, 
+    #                               callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
+    history = model.fit(X_train,#[X_mhc_train, X_pep_train],
               y_train,
               batch_size=BATCH_SIZE,
               epochs=epoch,
@@ -266,7 +307,7 @@ for epoch in range(1, EPOCHS+1):
         with open(dir_name + "history." + key + ".txt", "a" if epoch > 1 else "w") as hist_file:
             hist_file.writelines("\n".join(map(str, history.history[key])) + "\n")
             
-    y_pred = model.predict([X_mhc_test, X_pep_test])
+    y_pred = model.predict(X_test)#$[X_mhc_test, X_pep_test])
     
     y_true_clf = np.zeros(y_test.shape)
     y_true_clf[np.array(y_test >= BIND_THR)] = 1
@@ -283,39 +324,23 @@ for epoch in range(1, EPOCHS+1):
         hist_file.writelines(str(f1_score(y_true_clf, y_pred_clf)) + "\n")
     with open(dir_name + "history.auc.txt", "a" if epoch > 1 else "w") as hist_file:
         hist_file.writelines(str(roc_auc_score(y_true_clf, y_pred_clf)) + "\n")
-
         
-########################
-# Plotting the results #
-########################
-"""
-for iteration in range(1, 10000):
-    print()
-    print('-' * 50)
-    print('Iteration', iteration)
-#     model.fit(X, y, 
-#               batch_size=128, 
-#               nb_epoch=1, 
-#               verbose=VERBOSE,
-#               callbacks = [ModelCheckpoint(filepath = "model." + str(iteration % 2) + ".{epoch:02d}.hdf5")])
-    history = model.fit_generator(generate_batch(128, iteration), 
-                        samples_per_epoch=1280*3, 
-                        nb_epoch=6, 
-                        verbose=VERBOSE, 
-                        callbacks = [ModelCheckpoint(filepath = "model." + sys.argv[1] + "." + str(iteration % 2) + ".hdf5"), 
-                                     ReduceLROnPlateau(monitor="loss", factor=0.2, patience=4, min_lr=0.00001)])
-
-    for key in history.history.keys():
-        with open("history." + key + "." + sys.argv[1] + ".txt", "a" if iteration > 1 else "w") as hist_file:
-            hist_file.writelines("\n".join(map(str, history.history[key])) + "\n")
-
-    print("\nPredict big proportions:\n  real\t\tpred")
-    a = y_big[:20].reshape((20,1))
-    b = model.predict(X_big[:20,:,:])
-    print(np.hstack([a, b]), "\n")
     
-    print("Predict small proportions:\n  real\t\tpred")
-    a = y_small[-20:].reshape((20,1))
-    b = model.predict(X_small[-20:,:,:])
-    print(np.hstack([a, b]))
-"""
+    if epoch % 5 == 0:
+        data_d = {}
+        for file in [x for x in os.listdir(dir_name) if x.find("history") != -1]:
+            title = file[8:file.rfind(".txt")]
+            with open(dir_name+file) as inp:
+                data_d[title] = [float(y) for y in inp.readlines()]
+        print(data_d.keys())
+
+        f, ax = plt.subplots(1,2, figsize=(16, 7))
+        sns.set_style("darkgrid")
+        ax[0].set_title("validation")
+        ax[0].plot(data_d["f1"], label="f1")
+        ax[0].plot(data_d["auc"], label="auc")
+        ax[0].legend()
+        ax[1].set_title("loss")
+        ax[1].plot(data_d["loss"], label="loss")
+        ax[1].legend()
+        f.savefig(dir_name + "output.pdf")
