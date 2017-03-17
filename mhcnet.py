@@ -1,12 +1,16 @@
 from __future__ import print_function
 from keras.models import Model, load_model
 from keras.layers import Dense, Activation, Dropout
-from keras.layers import LSTM, GRU, Bidirectional, Input
+from keras.layers import LSTM, GRU, Bidirectional, Input, Conv1D
+from keras.layers.core import Flatten
+from keras.layers.convolutional import Conv1D
+from keras.layers.pooling import MaxPooling1D
 from keras.layers.normalization import BatchNormalization
 from keras.layers.embeddings import Embedding
 from keras.layers.merge import concatenate
 from keras.utils.data_utils import get_file
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
+import shutil
 import numpy as np
 from numpy.random import randint
 import random
@@ -162,31 +166,49 @@ print(X_pep_test.shape)
 print(X_mhc_test.shape)
 
 
+X_pep_train = X_pep_train.reshape((X_pep_train.shape[0], X_pep_train.shape[1] * X_pep_train.shape[2]))
+X_mhc_train = X_mhc_train.reshape((X_mhc_train.shape[0], X_mhc_train.shape[1] * X_mhc_train.shape[2]))
+X_pep_test = X_pep_test.reshape((X_pep_test.shape[0], X_pep_test.shape[1] * X_pep_test.shape[2]))
+X_mhc_test = X_mhc_test.reshape((X_mhc_test.shape[0], X_mhc_test.shape[1] * X_mhc_test.shape[2]))
+
+
 ###################
 # Build the model #
 ###################
-dir_name = "models/" + sys.argv[1] + "/"
-if len(sys.argv) > 2:
-    print("Loading model:", sys.argv[2])
-    model = load_model(sys.argv[2])
-else:
-    if not os.path.exists(dir_name):
-        print("Creating '", dir_name, "'", sep="")
-        os.makedirs(dir_name)
-    else:
-        print(dir_name, "exists! Remove / rename it to proceed. Exiting...")
-    
-    mhc_in = Input(shape=(34, 20))
-    mhc_branch = Bidirectional(LSTM(32, name="lstm_mhc"), "ave")(mhc_in)
+def make_model(dir_name):
+    mhc_in = Input(shape=(34*20,))
+    mhc_branch = Dense(128, activation="softmax")(mhc_in)
     mhc_branch = Dropout(.3)(mhc_branch)
+    mhc_branch = Dense(64, activation="softmax")(mhc_branch)
+    mhc_branch = Dropout(.3)(mhc_branch)
+    mhc_branch = Dense(16, activation="softmax")(mhc_branch)
+    mhc_branch = Dropout(.3)(mhc_branch)
+    # mhc_branch = Conv1D(8, 3, activation="relu")(mhc_in)
+    # mhc_branch = BatchNormalization()(mhc_branch)
+    # mhc_branch = MaxPooling1D()(mhc_branch)
+    # mhc_branch = Flatten()(mhc_branch)
+    # mhc_branch = Conv1D(32, 3, activation="relu")(mhc_in)
+    # mhc_branch = BatchNormalization()(mhc_branch)
+    # mhc_branch = Flatten()(mhc_branch)
+    # mhc_branch = MaxPooling1D()(mhc_branch)
     
-    pep_in = Input(shape=(15, 20))
-    pep_branch = LSTM(32, name="lstm_pep"), "ave")(pep_in)
+    pep_in = Input(shape=(15*20,))
+    pep_branch = Dense(64, activation="softmax")(pep_in)
     pep_branch = Dropout(.3)(pep_branch)
+    pep_branch = Dense(16, activation="softmax")(pep_branch)
+    pep_branch = Dropout(.3)(pep_branch)
+    pep_branch = Dense(8, activation="softmax")(pep_branch)
+    pep_branch = Dropout(.3)(pep_branch)
+    # pep_branch = Conv1D(8, 3, activation="relu")(pep_in)
+    # pep_branch = BatchNormalization()(pep_branch)
+    # pep_branch = MaxPooling1D()(pep_branch)
+    # pep_branch = Flatten()(pep_branch)
+    # pep_branch = Conv1D(32, 3, activation="relu")(pep_in)
+    # pep_branch = BatchNormalization()(pep_branch)
+    # pep_branch = Flatten()(pep_branch)
+    # pep_branch = MaxPooling1D()(pep_branch)
 
     merged = concatenate([pep_branch, mhc_branch])
-    merged = Dense(32)(merged)
-    merged = Dropout(.3)(merged)
     merged = Dense(16)(merged)
     merged = Dropout(.3)(merged)
     merged = Dense(8)(merged)
@@ -198,6 +220,29 @@ else:
     
     with open(dir_name + "model.json", "w") as outf:
         outf.write(model.to_json())
+        
+    return model
+
+
+dir_name = "models/" + sys.argv[1] + "/"
+if len(sys.argv) > 2:
+    if sys.argv[2] == "-r":
+        print("Cleaning", dir_name)
+        shutil.rmtree(dir_name)
+        os.makedirs(dir_name)
+        model = make_model(dir_name)
+    else:
+        print("Loading model:", sys.argv[2])
+        model = load_model(sys.argv[2])
+else:
+    if not os.path.exists(dir_name):
+        print("Creating '", dir_name, "'", sep="")
+        os.makedirs(dir_name)
+    else:
+        print(dir_name, "exists! Remove / rename it to proceed. Exiting...")
+        sys.exit()
+    
+    model = make_model(dir_name)
 
 
 print(model.summary())
