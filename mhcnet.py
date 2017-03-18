@@ -35,7 +35,7 @@ BIND_THR = 1 - np.log(500) / np.log(50000)
 
 VERBOSE=2
 BATCH_SIZE=32
-EPOCHS=500
+EPOCHS=100
 POOL_SIZE=2
 
 #theano.config.floatX="float32"
@@ -145,6 +145,7 @@ X_mhc = vectorize_mhc(mhc_df["pseudo"], mhc_df["mhc"], MAX_MHC_LEN, chars)
 print("Load train")
 df = read_df("data/bdata.2009.tsv")
 human_df = df.loc[df.species == "human", :]
+human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 MAX_PEP_LEN = max([len(x) for x in human_df["sequence"]])
 X_pep_train, y_train = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
@@ -154,6 +155,13 @@ for i, mhc in enumerate(human_df["mhc"]):
 print(X_pep_train.shape)
 print(X_mhc_train.shape)
 
+indices_strong = np.nonzero(np.array(y_train >= BIND_THR))[0]
+indices_weak   = np.nonzero(np.array(y_train < BIND_THR))[0]
+print("indices shapes:")
+print(indices_strong.shape)
+print(indices_weak.shape)
+assert(indices_strong.shape[0] + indices_weak.shape[0] == X_pep_train.shape[0])
+
 
 ####################
 # Load the CV data #
@@ -161,6 +169,7 @@ print(X_mhc_train.shape)
 print("Load CV")
 df = read_df("data/blind.tsv")
 human_df = df.loc[df.species == "human", :]
+human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 X_pep_test, y_test = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
 X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
@@ -175,41 +184,76 @@ print(X_mhc_test.shape)
 # X_pep_test = X_pep_test.reshape((X_pep_test.shape[0], X_pep_test.shape[1] * X_pep_test.shape[2]))
 # X_mhc_test = X_mhc_test.reshape((X_mhc_test.shape[0], X_mhc_test.shape[1] * X_mhc_test.shape[2]))
 
-X_train = np.hstack([X_pep_train, X_mhc_train])
-X_test = np.hstack([X_pep_test, X_mhc_test])
+# X_train = np.hstack([X_pep_train, X_mhc_train])
+# X_test = np.hstack([X_pep_test, X_mhc_test])
 
 
 ###################
 # Build the model #
 ###################
-def make_model2(dir_name):
-    mhc_in = Input(shape=(34*20,))
-    mhc_branch = Conv1D(32, 5)(mhc_in)
+
+#
+# LSTM / GRU
+#
+def make_model(dir_name):
+    mhc_in = Input(shape=(34,20))
+    mhc_branch = LSTM(32)(mhc_in)
+    mhc_branch = PReLU()(mhc_branch)
+    
+    pep_in = Input(shape=(9,20))
+    pep_branch = LSTM(32)(pep_in)
+    pep_branch = PReLU()(pep_branch)
+    
+    merged = concatenate([pep_branch, mhc_branch])
+    # merged = Dense(128)(merged)
+    # merged = Dropout(.3)(merged)
+    merged = Dense(64)(merged)
+    merged = Dropout(.3)(merged)
+    merged = Dense(16)(merged)
+    merged = Dropout(.3)(merged)
+    merged = Dense(8)(merged)
+    merged = Dropout(.3)(merged)
+    pred = Dense(1, activation="relu")(merged)
+
+    model = Model([mhc_in, pep_in], pred)
+    model.compile(loss='mse', optimizer="nadam")
+    
+    with open(dir_name + "model.json", "w") as outf:
+        outf.write(model.to_json())
+        
+    return model
+
+#
+# CNN 
+#
+def make_model_cnn(dir_name):
+    mhc_in = Input(shape=(34,20))
+    mhc_branch = Conv1D(32, 3)(mhc_in)
     mhc_branch = PReLU()(mhc_branch)
     mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
     
-    mhc_branch = Conv1D(64, 3)(mhc_branch)
-    mhc_branch = PReLU()(mhc_branch)
-    mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
+    # mhc_branch = Conv1D(64, 3)(mhc_branch)
+    # mhc_branch = PReLU()(mhc_branch)
+    # mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
     
     
-    pep_in = Input(shape=(15*20,))
-    pep_branch = Conv1D(32, 5)(pep_in)
+    pep_in = Input(shape=(9,20))
+    pep_branch = Conv1D(32, 3)(pep_in)
     pep_branch = PReLU()(pep_branch)
     pep_branch = MaxPooling1D(pool_size=POOL_SIZE)(pep_branch)
     
-    pep_branch = Conv1D(64, 3)(pep_branch)
-    pep_branch = PReLU()(pep_branch)
-    pep_branch = MaxPooling1D(pool_size=POOL_SIZE)(pep_branch)
+#     pep_branch = Conv1D(64, 3)(pep_branch)
+#     pep_branch = PReLU()(pep_branch)
+#     pep_branch = MaxPooling1D(pool_size=POOL_SIZE)(pep_branch)
     
     
-    # mhc_branch = Flatten()(mhc_branch)
-    # pep_branch = Flatten()(pep_branch)
+    mhc_branch = Flatten()(mhc_branch)
+    pep_branch = Flatten()(pep_branch)
 
     
     merged = concatenate([pep_branch, mhc_branch])
-    merged = Dense(128)(merged)
-    merged = Dropout(.3)(merged)
+    # merged = Dense(128)(merged)
+    # merged = Dropout(.3)(merged)
     merged = Dense(64)(merged)
     merged = Dropout(.3)(merged)
     merged = Dense(8)(merged)
@@ -224,35 +268,36 @@ def make_model2(dir_name):
         
     return model
 
-
-def make_model(dir_name):
-    mhc_in = Input(shape=(49,20))
-    mhc_branch = Conv1D(32, 5)(mhc_in)
-    mhc_branch = PReLU()(mhc_branch)
-    mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
-    
-    mhc_branch = Conv1D(64, 3)(mhc_branch)
-    mhc_branch = PReLU()(mhc_branch)
-    mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
-    
-    mhc_branch = Flatten()(mhc_branch)
-    
+def make_model_dense(dir_name):
+    mhc_in = Input(shape=(34,20))
+    mhc_branch = Flatten()(mhc_in)
     mhc_branch = Dense(128)(mhc_branch)
-    mhc_branch = Dropout(.3)(mhc_branch)
-    mhc_branch = Dense(64)(mhc_branch)
-    mhc_branch = Dropout(.3)(mhc_branch)
-    mhc_branch = Dense(8)(mhc_branch)
-    mhc_branch = Dropout(.3)(mhc_branch)
-    pred = Dense(1, activation="relu")(mhc_branch)
+    mhc_branch = PReLU()(mhc_branch)
+    mhc_branch = Dense(32)(mhc_branch)
+    mhc_branch = PReLU()(mhc_branch)
+    
+    
+    pep_in = Input(shape=(9,20))
+    pep_branch = Flatten()(pep_in)
+    pep_branch = Dense(128)(pep_branch)
+    pep_branch = PReLU()(pep_branch)
+    pep_branch = Dense(32)(pep_branch)
+    pep_branch = PReLU()(pep_branch)
 
-    model = Model(mhc_in, pred)
+    merged = concatenate([pep_branch, mhc_branch])
+    merged = Dense(64)(merged)
+    merged = Dropout(.3)(merged)
+    merged = Dense(8)(merged)
+    merged = Dropout(.3)(merged)
+    pred = Dense(1, activation="relu")(merged)
+
+    model = Model([mhc_in, pep_in], pred)
     model.compile(loss='mse', optimizer="nadam")
     
     with open(dir_name + "model.json", "w") as outf:
         outf.write(model.to_json())
         
     return model
-
 
 dir_name = "models/" + sys.argv[1] + "/"
 if len(sys.argv) > 2:
@@ -281,33 +326,59 @@ print(model.summary())
 ###################
 # Train the model #
 ###################
-def generate_batch(X_list, y):
-    pass
+def generate_batch(X_list, y, batch_size):
+    while True:
+        to_sample_strong = batch_size / 2
+        to_sample_weak   = batch_size / 2
+        sampled_indices_strong = indices_strong[randint(0, indices_strong.shape[0], size=to_sample_strong)]
+        sampled_indices_weak   = indices_weak[randint(0, indices_weak.shape[0], size=to_sample_weak)]
+        yield [np.vstack([X_list[0][sampled_indices_strong], X_list[0][sampled_indices_weak]]), \
+               np.vstack([X_list[1][sampled_indices_strong], X_list[1][sampled_indices_weak]])], \
+              np.vstack([y[sampled_indices_strong], y[sampled_indices_weak]])
+
+            
+def generate_batch_random_peptides(X_list, y, batch_size):
+    def rand_pep(peptide_len = 9):
+        pep = ""
+        for pos in randint(0, len(chars), size=peptide_len):
+            pep += chars[pos]
+        return pep
+    
+    while True:
+        to_sample_strong = int(batch_size * .4)
+        to_sample_weak   = int(batch_size * .4)
+        to_generate      = batch_size - to_sample_strong - to_sample_weak
+        sampled_indices_strong = indices_strong[randint(0, indices_strong.shape[0], size=to_sample_strong)]
+        sampled_indices_weak   = indices_weak[randint(0, indices_weak.shape[0], size=to_sample_weak)]
+        X_mhc = X_list[0][randint(0, X_list[0].shape[0], size=to_generate)]
+        X_pep, y_pep = vectorize_xy(np.array([rand_pep() for _ in range(to_generate)]), np.array([0 for _ in range(to_generate)]))
+        yield [np.vstack([X_mhc, X_list[0][sampled_indices_strong], X_list[0][sampled_indices_weak]]), \
+               np.vstack([X_pep, X_list[1][sampled_indices_strong], X_list[1][sampled_indices_weak]])], \
+              np.vstack([y_pep, y[sampled_indices_strong], y[sampled_indices_weak]])
 
 
 
 print("Training...")
 for epoch in range(1, EPOCHS+1):
-    # history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train), 
-    #                               steps_per_epoch = int(X_mhc_train.shape[0] / BATCH_SIZE),
+    history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE), 
+                                  steps_per_epoch = int(X_mhc_train.shape[0] / BATCH_SIZE),
+                                  epochs=epoch, 
+                                  verbose=VERBOSE, 
+                                  initial_epoch=epoch-1, 
+                                  callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
+    
+    # history = model.fit([X_mhc_train, X_pep_train], y_train, 
+    #                               batch_size=BATCH_SIZE,
     #                               epochs=epoch, 
     #                               verbose=VERBOSE, 
     #                               initial_epoch=epoch-1, 
     #                               callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
-    history = model.fit(X_train,#[X_mhc_train, X_pep_train],
-              y_train,
-              batch_size=BATCH_SIZE,
-              epochs=epoch,
-              verbose=VERBOSE,
-              initial_epoch=epoch-1, 
-              callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
-#              validation_data=([X_mhc_test, X_pep_test], y_test))
     
     for key in history.history.keys():
         with open(dir_name + "history." + key + ".txt", "a" if epoch > 1 else "w") as hist_file:
             hist_file.writelines("\n".join(map(str, history.history[key])) + "\n")
             
-    y_pred = model.predict(X_test)#$[X_mhc_test, X_pep_test])
+    y_pred = model.predict([X_mhc_test, X_pep_test])
     
     y_true_clf = np.zeros(y_test.shape)
     y_true_clf[np.array(y_test >= BIND_THR)] = 1
