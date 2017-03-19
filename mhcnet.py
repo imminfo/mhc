@@ -20,6 +20,7 @@ import re
 import pandas as pd
 import theano
 from scipy import sparse
+import scipy.stats as stats 
 from sklearn.metrics import mean_squared_error, f1_score, roc_auc_score, confusion_matrix
 import keras.backend as K
 import matplotlib
@@ -70,6 +71,7 @@ def read_df(filepath):
     df.loc[df.mhc == "HLACw4", "mhc"] = "HLAC0401"
 
     df = df.loc[df.mhc != "HLAB60", :]
+    
     return df
     
     
@@ -162,6 +164,13 @@ print(indices_strong.shape)
 print(indices_weak.shape)
 assert(indices_strong.shape[0] + indices_weak.shape[0] == X_pep_train.shape[0])
 
+_, mhc_unique_indices = np.unique(mhc_df["pseudo"], return_index=True)
+X_mhc_unique = np.zeros((mhc_unique_indices.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
+for i, j in enumerate(mhc_unique_indices):
+    X_mhc_unique[i,:,:] = X_mhc[mhc_df["mhc"].loc[j]]
+    
+weights_train = np.exp(stats.beta.pdf(y_train, a=3.75, b=5))
+
 
 ####################
 # Load the CV data #
@@ -177,6 +186,8 @@ for i, mhc in enumerate(human_df["mhc"]):
     X_mhc_test[i,:,:] = X_mhc[mhc]
 print(X_pep_test.shape)
 print(X_mhc_test.shape)
+
+weights_test = np.exp(stats.beta.pdf(y_test, a=3.75, b=5))
 
 
 # X_pep_train = X_pep_train.reshape((X_pep_train.shape[0], X_pep_train.shape[1] * X_pep_train.shape[2]))
@@ -195,13 +206,13 @@ print(X_mhc_test.shape)
 #
 # LSTM / GRU
 #
-def make_model_lstm(dir_name):
+def make_model(dir_name):
     mhc_in = Input(shape=(34,20))
-    mhc_branch = LSTM(32)(mhc_in)
+    mhc_branch = GRU(32)(mhc_in)
     mhc_branch = PReLU()(mhc_branch)
     
     pep_in = Input(shape=(9,20))
-    pep_branch = LSTM(32)(pep_in)
+    pep_branch = GRU(32)(pep_in)
     pep_branch = PReLU()(pep_branch)
     
     merged = concatenate([pep_branch, mhc_branch])
@@ -226,7 +237,7 @@ def make_model_lstm(dir_name):
 #
 # CNN 
 #
-def make_model(dir_name):
+def make_model_dense(dir_name):
     mhc_in = Input(shape=(34,20))
     mhc_branch = Conv1D(32, 3)(mhc_in)
     mhc_branch = PReLU()(mhc_branch)
@@ -268,6 +279,9 @@ def make_model(dir_name):
         
     return model
 
+#
+# Dense
+# 
 def make_model_dense(dir_name):
     mhc_in = Input(shape=(34,20))
     mhc_branch = Flatten()(mhc_in)
@@ -348,19 +362,34 @@ def generate_batch_random_peptides(X_list, y, batch_size):
         to_sample_strong = int(batch_size * .4)
         to_sample_weak   = int(batch_size * .4)
         to_generate      = batch_size - to_sample_strong - to_sample_weak
+        
         sampled_indices_strong = indices_strong[randint(0, indices_strong.shape[0], size=to_sample_strong)]
         sampled_indices_weak   = indices_weak[randint(0, indices_weak.shape[0], size=to_sample_weak)]
-        X_mhc = X_list[0][randint(0, X_list[0].shape[0], size=to_generate)]
+        
+        X_mhc = X_mhc_unique[randint(0, X_mhc_unique.shape[0], size=to_generate)]
         X_pep, y_pep = vectorize_xy(np.array([rand_pep(X_list[1].shape[1]) for _ in range(to_generate)]), np.array([0 for _ in range(to_generate)]), X_list[1].shape[1], chars)
+        
         yield [np.vstack([X_mhc, X_list[0][sampled_indices_strong], X_list[0][sampled_indices_weak]]),  \
                np.vstack([X_pep, X_list[1][sampled_indices_strong], X_list[1][sampled_indices_weak]])], \
               np.vstack([y_pep, y[sampled_indices_strong], y[sampled_indices_weak]])
+            
+            
+def generate_batch_weighted(X_list, y, batch_size):
+    while True:
+        to_sample_strong = batch_size / 2
+        to_sample_weak   = batch_size / 2
+        sampled_indices_strong = indices_strong[randint(0, indices_strong.shape[0], size=to_sample_strong)]
+        sampled_indices_weak   = indices_weak[randint(0, indices_weak.shape[0], size=to_sample_weak)]
+        yield [np.vstack([X_list[0][sampled_indices_strong], X_list[0][sampled_indices_weak]]), \
+               np.vstack([X_list[1][sampled_indices_strong], X_list[1][sampled_indices_weak]])], \
+              np.vstack([y[sampled_indices_strong], y[sampled_indices_weak]]), \
+              np.vstack([weights_train[sampled_indices_strong], weights_train[sampled_indices_weak]]).reshape((batch_size,))
 
 
 
 print("Training...")
 for epoch in range(1, EPOCHS+1):
-    history = model.fit_generator(generate_batch_random_peptides([X_mhc_train, X_pep_train], y_train, BATCH_SIZE), 
+    history = model.fit_generator(generate_batch_weighted([X_mhc_train, X_pep_train], y_train, BATCH_SIZE), 
                                   steps_per_epoch = int(X_mhc_train.shape[0] / BATCH_SIZE),
                                   epochs=epoch, 
                                   verbose=VERBOSE, 
