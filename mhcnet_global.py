@@ -36,7 +36,7 @@ BIND_THR = 1 - np.log(500) / np.log(50000)
 
 VERBOSE=2
 BATCH_SIZE=32
-EPOCHS=100
+EPOCHS=200
 POOL_SIZE=2
 
 #theano.config.floatX="float32"
@@ -203,28 +203,34 @@ weights_test = np.exp(stats.beta.pdf(y_test, a=3.75, b=5))
 # Build the model #
 ###################
 
-#
-# LSTM / GRU
-#
-def make_model(dir_name):
+def make_model_lstm(dir_name):
     mhc_in = Input(shape=(34,20))
-    mhc_branch = GRU(32)(mhc_in)
+    mhc_branch = LSTM(64)(mhc_in)
     mhc_branch = PReLU()(mhc_branch)
     
     pep_in = Input(shape=(9,20))
-    pep_branch = GRU(32)(pep_in)
+    pep_branch = LSTM(64)(pep_in)
     pep_branch = PReLU()(pep_branch)
     
     merged = concatenate([pep_branch, mhc_branch])
-    # merged = Dense(128)(merged)
-    # merged = Dropout(.3)(merged)
+    merged = Dense(128)(merged)
+    merged = Dropout(.3)(merged)
+    merged = PReLU()(merged)
+    
     merged = Dense(64)(merged)
     merged = Dropout(.3)(merged)
+    merged = PReLU()(merged)
+    
     merged = Dense(16)(merged)
     merged = Dropout(.3)(merged)
+    merged = PReLU()(merged)
+    
     merged = Dense(8)(merged)
     merged = Dropout(.3)(merged)
-    pred = Dense(1, activation="relu")(merged)
+    merged = PReLU()(merged)
+    
+    merged = Dense(1)(merged)
+    pred = PReLU()(merged)
 
     model = Model([mhc_in, pep_in], pred)
     model.compile(loss='mse', optimizer="nadam")
@@ -234,28 +240,66 @@ def make_model(dir_name):
         
     return model
 
-#
-# CNN 
-#
-def make_model_dense(dir_name):
+
+def make_model_gru(dir_name):
     mhc_in = Input(shape=(34,20))
-    mhc_branch = Conv1D(32, 3)(mhc_in)
+    mhc_branch = GRU(64)(mhc_in)
     mhc_branch = PReLU()(mhc_branch)
-    mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
     
-    # mhc_branch = Conv1D(64, 3)(mhc_branch)
-    # mhc_branch = PReLU()(mhc_branch)
-    # mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
+    pep_in = Input(shape=(9,20))
+    pep_branch = GRU(64)(pep_in)
+    pep_branch = PReLU()(pep_branch)
+    
+    merged = concatenate([pep_branch, mhc_branch])
+    merged = Dense(128)(merged)
+    merged = Dropout(.3)(merged)
+    merged = PReLU()(merged)
+    
+    merged = Dense(64)(merged)
+    merged = Dropout(.3)(merged)
+    merged = PReLU()(merged)
+    
+    merged = Dense(16)(merged)
+    merged = Dropout(.3)(merged)
+    merged = PReLU()(merged)
+    
+    merged = Dense(8)(merged)
+    merged = Dropout(.3)(merged)
+    merged = PReLU()(merged)
+    
+    merged = Dense(1)(merged)
+    pred = PReLU()(merged)
+
+    model = Model([mhc_in, pep_in], pred)
+    model.compile(loss='mse', optimizer="nadam")
+    
+    with open(dir_name + "model.json", "w") as outf:
+        outf.write(model.to_json())
+        
+    return model
+
+
+def make_model_cnn(dir_name):
+    mhc_in = Input(shape=(34,20))
+    mhc_branch = Conv1D(32, 5)(mhc_in)
+    mhc_branch = PReLU()(mhc_branch)
+    
+    mhc_branch = Conv1D(32, 3)(mhc_branch)
+    mhc_branch = PReLU()(mhc_branch)
+    
+    mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
+    mhc_branch = Dropout(.2)(mhc_branch)
     
     
     pep_in = Input(shape=(9,20))
-    pep_branch = Conv1D(32, 3)(pep_in)
+    pep_branch = Conv1D(32, 5)(pep_in)
     pep_branch = PReLU()(pep_branch)
-    pep_branch = MaxPooling1D(pool_size=POOL_SIZE)(pep_branch)
     
-#     pep_branch = Conv1D(64, 3)(pep_branch)
-#     pep_branch = PReLU()(pep_branch)
-#     pep_branch = MaxPooling1D(pool_size=POOL_SIZE)(pep_branch)
+    pep_branch = Conv1D(32, 3)(pep_branch)
+    pep_branch = PReLU()(pep_branch)
+    
+    pep_branch = MaxPooling1D(pool_size=POOL_SIZE)(pep_branch)
+    pep_branch = Dropout(.2)(pep_branch)
     
     
     mhc_branch = Flatten()(mhc_branch)
@@ -263,13 +307,24 @@ def make_model_dense(dir_name):
 
     
     merged = concatenate([pep_branch, mhc_branch])
-    # merged = Dense(128)(merged)
-    # merged = Dropout(.3)(merged)
+    merged = Dense(128)(merged)
+    merged = Dropout(.3)(merged)
+    merged = PReLU()(merged)
+    
     merged = Dense(64)(merged)
     merged = Dropout(.3)(merged)
+    merged = PReLU()(merged)
+    
+    merged = Dense(16)(merged)
+    merged = Dropout(.3)(merged)
+    merged = PReLU()(merged)
+    
     merged = Dense(8)(merged)
     merged = Dropout(.3)(merged)
-    pred = Dense(1, activation="relu")(merged)
+    merged = PReLU()(merged)
+    
+    merged = Dense(1)(merged)
+    pred = PReLU()(merged)
 
     model = Model([mhc_in, pep_in], pred)
     model.compile(loss='mse', optimizer="nadam")
@@ -279,31 +334,47 @@ def make_model_dense(dir_name):
         
     return model
 
-#
-# Dense
-# 
+
 def make_model_dense(dir_name):
     mhc_in = Input(shape=(34,20))
     mhc_branch = Flatten()(mhc_in)
+    
     mhc_branch = Dense(128)(mhc_branch)
+    mhc_branch = Dropout(.3)(mhc_branch)
     mhc_branch = PReLU()(mhc_branch)
+    
     mhc_branch = Dense(32)(mhc_branch)
+    mhc_branch = Dropout(.3)(mhc_branch)
     mhc_branch = PReLU()(mhc_branch)
     
     
     pep_in = Input(shape=(9,20))
     pep_branch = Flatten()(pep_in)
+    
     pep_branch = Dense(128)(pep_branch)
+    pep_branch = Dropout(.3)(pep_branch)
     pep_branch = PReLU()(pep_branch)
+    
     pep_branch = Dense(32)(pep_branch)
+    pep_branch = Dropout(.3)(pep_branch)
     pep_branch = PReLU()(pep_branch)
+    
 
     merged = concatenate([pep_branch, mhc_branch])
+    merged = Dense(128)(merged)
+    merged = Dropout(.3)(merged)
+    merged = PReLU()(merged)
+    
     merged = Dense(64)(merged)
     merged = Dropout(.3)(merged)
-    merged = Dense(8)(merged)
+    merged = PReLU()(merged)
+    
+    merged = Dense(16)(merged)
     merged = Dropout(.3)(merged)
-    pred = Dense(1, activation="relu")(merged)
+    merged = PReLU()(merged)
+    
+    merged = Dense(1)(merged)
+    pred = PReLU()(merged)
 
     model = Model([mhc_in, pep_in], pred)
     model.compile(loss='mse', optimizer="nadam")
@@ -312,6 +383,22 @@ def make_model_dense(dir_name):
         outf.write(model.to_json())
         
     return model
+
+
+which_model, which_batch = sys.argv[1].split("_")
+make_model = make_model_lstm
+if which_model == "lstm":
+    make_model = make_model_lstm
+elif which_model == "gru":
+    make_model = make_model_gru
+elif which_model == "dense":
+    make_model = make_model_dense
+elif which_model == "cnn":
+    make_model = make_model_cnn
+else:
+    print("unknown keyword model")
+    sys.exit()
+
 
 dir_name = "models/" + sys.argv[1] + "/"
 if len(sys.argv) > 2:
@@ -334,13 +421,19 @@ else:
     model = make_model(dir_name)
 
 
-print(model.summary())
+print(model.summary())    
 
 
 ###################
 # Train the model #
 ###################
-def generate_batch(X_list, y, batch_size):
+def generate_batch_imba(X_list, y, batch_size):
+    while True:
+        sampled_indices = randint(0, X_list[0].shape[0], size=batch_size)
+        yield [X_list[0][sampled_indices], X_list[1][sampled_indices]], y[sampled_indices]
+
+            
+def generate_batch_balanced(X_list, y, batch_size):
     while True:
         to_sample_strong = batch_size / 2
         to_sample_weak   = batch_size / 2
@@ -351,7 +444,7 @@ def generate_batch(X_list, y, batch_size):
               np.vstack([y[sampled_indices_strong], y[sampled_indices_weak]])
 
             
-def generate_batch_random_peptides(X_list, y, batch_size):
+def generate_batch_random(X_list, y, batch_size):
     def rand_pep(peptide_len):
         pep = ""
         for pos in randint(0, len(chars), size=peptide_len):
@@ -386,10 +479,23 @@ def generate_batch_weighted(X_list, y, batch_size):
               np.vstack([weights_train[sampled_indices_strong], weights_train[sampled_indices_weak]]).reshape((batch_size,))
 
 
+generate_batch = generate_batch_imba
+if which_batch == "imba":
+    generate_batch = generate_batch_imba
+elif which_batch == "bal":
+    generate_batch = generate_batch_balanced
+elif which_batch == "rand":
+    generate_batch = generate_batch_random
+elif which_batch == "wei":
+    generate_batch = generate_batch_weighted
+else:
+    print("unknown keyword batch")
+    sys.exit()
+
 
 print("Training...")
 for epoch in range(1, EPOCHS+1):
-    history = model.fit_generator(generate_batch_weighted([X_mhc_train, X_pep_train], y_train, BATCH_SIZE), 
+    history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE), 
                                   steps_per_epoch = int(X_mhc_train.shape[0] / BATCH_SIZE),
                                   epochs=epoch, 
                                   verbose=VERBOSE, 

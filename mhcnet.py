@@ -72,30 +72,9 @@ def read_df(filepath):
 
     df = df.loc[df.mhc != "HLAB60", :]
     
+    df = df.loc[df["mhc"] == "HLAA0201",:]
+    
     return df
-    
-    
-def pv_vec(seq, protvec):
-    res = np.zeros((100, len(seq) - 2), dtype=float)
-    for i in range(len(seq) - 2):
-        res[:, i] = protvec[seq[i:i+3]]
-    return res
-
-
-def pv_sum(seq, protvec):
-    res = np.zeros((100,), dtype=float)
-    for i in range(len(seq) - 2):
-        res += protvec[seq[i:i+3]]
-    return res
-
-
-def vectorize_mhc(seq_vec, name_vec, max_len, chars):
-    res = {}
-    for i, seq in enumerate(seq_vec):
-        res[name_vec[i]] = np.zeros((max_len, len(chars)), dtype=np.bool)
-        for row, char in enumerate(seq):
-            res[name_vec[i]][row, char_indices[char]] = 1
-    return res
 
 
 def vectorize_xy(seq_vec, affin_vec, max_len, chars):
@@ -105,21 +84,6 @@ def vectorize_xy(seq_vec, affin_vec, max_len, chars):
         for row, char in enumerate(seq):
             X[i, row, char_indices[char]] = 1
     return X, y.reshape(len(seq_vec), 1)
-
-
-
-#########################
-# Load the ProtVec data #
-#########################
-"""
-protvec_df = pd.read_table("data/protvec.csv", sep = "\\t", header=None)
-protvec = {}
-for ind, row in protvec_df.iterrows():
-    row = list(row)
-    row[0] = row[0][1:]
-    row[-1] = row[-1][:-1]
-    protvec[row[0]] = np.array(row[1:], dtype=float)
-"""
 
     
 #####################
@@ -151,11 +115,7 @@ human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 MAX_PEP_LEN = max([len(x) for x in human_df["sequence"]])
 X_pep_train, y_train = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
-X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
-for i, mhc in enumerate(human_df["mhc"]):
-    X_mhc_train[i,:,:] = X_mhc[mhc]
 print(X_pep_train.shape)
-print(X_mhc_train.shape)
 
 indices_strong = np.nonzero(np.array(y_train >= BIND_THR))[0]
 indices_weak   = np.nonzero(np.array(y_train < BIND_THR))[0]
@@ -163,11 +123,6 @@ print("indices shapes:")
 print(indices_strong.shape)
 print(indices_weak.shape)
 assert(indices_strong.shape[0] + indices_weak.shape[0] == X_pep_train.shape[0])
-
-_, mhc_unique_indices = np.unique(mhc_df["pseudo"], return_index=True)
-X_mhc_unique = np.zeros((mhc_unique_indices.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
-for i, j in enumerate(mhc_unique_indices):
-    X_mhc_unique[i,:,:] = X_mhc[mhc_df["mhc"].loc[j]]
     
 weights_train = np.exp(stats.beta.pdf(y_train, a=3.75, b=5))
 
@@ -181,22 +136,9 @@ human_df = df.loc[df.species == "human", :]
 human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 X_pep_test, y_test = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
-X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
-for i, mhc in enumerate(human_df["mhc"]):
-    X_mhc_test[i,:,:] = X_mhc[mhc]
 print(X_pep_test.shape)
-print(X_mhc_test.shape)
 
 weights_test = np.exp(stats.beta.pdf(y_test, a=3.75, b=5))
-
-
-# X_pep_train = X_pep_train.reshape((X_pep_train.shape[0], X_pep_train.shape[1] * X_pep_train.shape[2]))
-# X_mhc_train = X_mhc_train.reshape((X_mhc_train.shape[0], X_mhc_train.shape[1] * X_mhc_train.shape[2]))
-# X_pep_test = X_pep_test.reshape((X_pep_test.shape[0], X_pep_test.shape[1] * X_pep_test.shape[2]))
-# X_mhc_test = X_mhc_test.reshape((X_mhc_test.shape[0], X_mhc_test.shape[1] * X_mhc_test.shape[2]))
-
-# X_train = np.hstack([X_pep_train, X_mhc_train])
-# X_test = np.hstack([X_pep_test, X_mhc_test])
 
 
 ###################
@@ -207,26 +149,22 @@ weights_test = np.exp(stats.beta.pdf(y_test, a=3.75, b=5))
 # LSTM / GRU
 #
 def make_model(dir_name):
-    mhc_in = Input(shape=(34,20))
-    mhc_branch = GRU(32)(mhc_in)
-    mhc_branch = PReLU()(mhc_branch)
+    model = Sequential()
+    model.add(LSTM(32))
+    model.add(PReLU())
     
-    pep_in = Input(shape=(9,20))
-    pep_branch = GRU(32)(pep_in)
-    pep_branch = PReLU()(pep_branch)
+    model.add(Dense(64))
+    model.add(Dropout(.3))
+    model.add(PReLU())
     
-    merged = concatenate([pep_branch, mhc_branch])
-    # merged = Dense(128)(merged)
-    # merged = Dropout(.3)(merged)
-    merged = Dense(64)(merged)
-    merged = Dropout(.3)(merged)
-    merged = Dense(16)(merged)
-    merged = Dropout(.3)(merged)
-    merged = Dense(8)(merged)
-    merged = Dropout(.3)(merged)
-    pred = Dense(1, activation="relu")(merged)
+    model.add(Dense(16))
+    model.add(Dropout(.3))
+    model.add(PReLU())
+    
+    model.add(Dense(8))
+    model.add(Dropout(.3))
+    model.add(PRelu())
 
-    model = Model([mhc_in, pep_in], pred)
     model.compile(loss='mse', optimizer="nadam")
     
     with open(dir_name + "model.json", "w") as outf:
@@ -237,7 +175,7 @@ def make_model(dir_name):
 #
 # CNN 
 #
-def make_model_dense(dir_name):
+def make_model_cnn(dir_name):
     mhc_in = Input(shape=(34,20))
     mhc_branch = Conv1D(32, 3)(mhc_in)
     mhc_branch = PReLU()(mhc_branch)
