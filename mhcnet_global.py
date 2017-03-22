@@ -205,27 +205,27 @@ weights_test = np.exp(stats.beta.pdf(y_test, a=3.75, b=5))
 
 def make_model_lstm(dir_name):
     mhc_in = Input(shape=(34,20))
-    mhc_branch = LSTM(64)(mhc_in)
+    mhc_branch = LSTM(64, kernel_initializer="he_uniform")(mhc_in)
     mhc_branch = PReLU()(mhc_branch)
     
     pep_in = Input(shape=(9,20))
-    pep_branch = LSTM(64)(pep_in)
+    pep_branch = LSTM(64, kernel_initializer="he_uniform")(pep_in)
     pep_branch = PReLU()(pep_branch)
     
     merged = concatenate([pep_branch, mhc_branch])
-    merged = Dense(128)(merged)
+    merged = Dense(128, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
-    merged = Dense(64)(merged)
+    merged = Dense(64, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
-    merged = Dense(16)(merged)
+    merged = Dense(16, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
-    merged = Dense(8)(merged)
+    merged = Dense(8, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
@@ -243,27 +243,27 @@ def make_model_lstm(dir_name):
 
 def make_model_gru(dir_name):
     mhc_in = Input(shape=(34,20))
-    mhc_branch = GRU(64)(mhc_in)
+    mhc_branch = GRU(64, kernel_initializer="he_uniform")(mhc_in)
     mhc_branch = PReLU()(mhc_branch)
     
     pep_in = Input(shape=(9,20))
-    pep_branch = GRU(64)(pep_in)
+    pep_branch = GRU(64, kernel_initializer="he_uniform")(pep_in)
     pep_branch = PReLU()(pep_branch)
     
     merged = concatenate([pep_branch, mhc_branch])
-    merged = Dense(128)(merged)
+    merged = Dense(128, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
-    merged = Dense(64)(merged)
+    merged = Dense(64, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
-    merged = Dense(16)(merged)
+    merged = Dense(16, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
-    merged = Dense(8)(merged)
+    merged = Dense(8, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
@@ -281,10 +281,10 @@ def make_model_gru(dir_name):
 
 def make_model_cnn(dir_name):
     mhc_in = Input(shape=(34,20))
-    mhc_branch = Conv1D(32, 5)(mhc_in)
+    mhc_branch = Conv1D(32, 5, kernel_initializer="he_uniform")(mhc_in)
     mhc_branch = PReLU()(mhc_branch)
     
-    mhc_branch = Conv1D(32, 3)(mhc_branch)
+    mhc_branch = Conv1D(32, 3, kernel_initializer="he_uniform")(mhc_branch)
     mhc_branch = PReLU()(mhc_branch)
     
     mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
@@ -292,10 +292,10 @@ def make_model_cnn(dir_name):
     
     
     pep_in = Input(shape=(9,20))
-    pep_branch = Conv1D(32, 5)(pep_in)
+    pep_branch = Conv1D(32, 5, kernel_initializer="he_uniform")(pep_in)
     pep_branch = PReLU()(pep_branch)
     
-    pep_branch = Conv1D(32, 3)(pep_branch)
+    pep_branch = Conv1D(32, 3, kernel_initializer="he_uniform")(pep_branch)
     pep_branch = PReLU()(pep_branch)
     
     pep_branch = MaxPooling1D(pool_size=POOL_SIZE)(pep_branch)
@@ -307,19 +307,19 @@ def make_model_cnn(dir_name):
 
     
     merged = concatenate([pep_branch, mhc_branch])
-    merged = Dense(128)(merged)
+    merged = Dense(128, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
-    merged = Dense(64)(merged)
+    merged = Dense(64, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
-    merged = Dense(16)(merged)
+    merged = Dense(16, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
-    merged = Dense(8)(merged)
+    merged = Dense(8, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
@@ -339,11 +339,11 @@ def make_model_dense(dir_name):
     mhc_in = Input(shape=(34,20))
     mhc_branch = Flatten()(mhc_in)
     
-    mhc_branch = Dense(128)(mhc_branch)
+    mhc_branch = Dense(128, kernel_initializer="he_uniform")(mhc_branch)
     mhc_branch = Dropout(.3)(mhc_branch)
     mhc_branch = PReLU()(mhc_branch)
     
-    mhc_branch = Dense(32)(mhc_branch)
+    mhc_branch = Dense(32, kernel_initializer="he_uniform")(mhc_branch)
     mhc_branch = Dropout(.3)(mhc_branch)
     mhc_branch = PReLU()(mhc_branch)
     
@@ -351,25 +351,25 @@ def make_model_dense(dir_name):
     pep_in = Input(shape=(9,20))
     pep_branch = Flatten()(pep_in)
     
-    pep_branch = Dense(128)(pep_branch)
+    pep_branch = Dense(128, kernel_initializer="he_uniform")(pep_branch)
     pep_branch = Dropout(.3)(pep_branch)
     pep_branch = PReLU()(pep_branch)
     
-    pep_branch = Dense(32)(pep_branch)
+    pep_branch = Dense(3, kernel_initializer="he_uniform")(pep_branch)
     pep_branch = Dropout(.3)(pep_branch)
     pep_branch = PReLU()(pep_branch)
     
 
     merged = concatenate([pep_branch, mhc_branch])
-    merged = Dense(128)(merged)
+    merged = Dense(128, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
-    merged = Dense(64)(merged)
+    merged = Dense(64, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
-    merged = Dense(16)(merged)
+    merged = Dense(16, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
     merged = PReLU()(merged)
     
