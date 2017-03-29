@@ -36,7 +36,7 @@ BIND_THR = 1 - np.log(500) / np.log(50000)
 
 VERBOSE=2
 BATCH_SIZE=32
-EPOCHS=200
+EPOCHS=100
 POOL_SIZE=2
 
 #theano.config.floatX="float32"
@@ -243,29 +243,25 @@ def make_model_lstm(dir_name):
 
 def make_model_gru(dir_name):
     mhc_in = Input(shape=(34,20))
-    mhc_branch = GRU(64, kernel_initializer="he_uniform")(mhc_in)
+    mhc_branch = GRU(64, kernel_initializer="he_uniform", implementation=2, dropout=.2, recurrent_dropout=.2)(mhc_in)
+    mhc_branch = BatchNormalization()(mhc_branch)
     mhc_branch = PReLU()(mhc_branch)
     
     pep_in = Input(shape=(9,20))
-    pep_branch = GRU(64, kernel_initializer="he_uniform")(pep_in)
+    pep_branch = GRU(64, kernel_initializer="he_uniform", implementation=2, dropout=.2, recurrent_dropout=.2)(pep_in)
+    pep_branch = BatchNormalization()(pep_branch)
     pep_branch = PReLU()(pep_branch)
     
     merged = concatenate([pep_branch, mhc_branch])
     merged = Dense(128, kernel_initializer="he_uniform")(merged)
-    merged = Dropout(.3)(merged)
+    merged = BatchNormalization()(merged)
     merged = PReLU()(merged)
+    merged = Dropout(.3)(merged)
     
-    merged = Dense(64, kernel_initializer="he_uniform")(merged)
-    merged = Dropout(.3)(merged)
+    merged = Dense(128, kernel_initializer="he_uniform")(merged)
+    merged = BatchNormalization()(merged)
     merged = PReLU()(merged)
-    
-    merged = Dense(16, kernel_initializer="he_uniform")(merged)
     merged = Dropout(.3)(merged)
-    merged = PReLU()(merged)
-    
-    merged = Dense(8, kernel_initializer="he_uniform")(merged)
-    merged = Dropout(.3)(merged)
-    merged = PReLU()(merged)
     
     merged = Dense(1)(merged)
     pred = PReLU()(merged)
@@ -388,12 +384,16 @@ def make_model_dense(dir_name):
 which_model, which_batch = sys.argv[1].split("_")
 make_model = make_model_lstm
 if which_model == "lstm":
+    print("lstm")
     make_model = make_model_lstm
 elif which_model == "gru":
+    print("gru")
     make_model = make_model_gru
 elif which_model == "dense":
+    print("dense")
     make_model = make_model_dense
 elif which_model == "cnn":
+    print("cnn")
     make_model = make_model_cnn
 else:
     print("unknown keyword model")
@@ -469,8 +469,8 @@ def generate_batch_random(X_list, y, batch_size):
             
 def generate_batch_weighted(X_list, y, batch_size):
     while True:
-        to_sample_strong = batch_size / 2
-        to_sample_weak   = batch_size / 2
+        to_sample_strong = int(batch_size / 2)
+        to_sample_weak   = int(batch_size / 2)
         sampled_indices_strong = indices_strong[randint(0, indices_strong.shape[0], size=to_sample_strong)]
         sampled_indices_weak   = indices_weak[randint(0, indices_weak.shape[0], size=to_sample_weak)]
         yield [np.vstack([X_list[0][sampled_indices_strong], X_list[0][sampled_indices_weak]]), \
@@ -481,12 +481,16 @@ def generate_batch_weighted(X_list, y, batch_size):
 
 generate_batch = generate_batch_imba
 if which_batch == "imba":
+    print("imba")
     generate_batch = generate_batch_imba
 elif which_batch == "bal":
+    print("bal")
     generate_batch = generate_batch_balanced
 elif which_batch == "rand":
+    print("rand")
     generate_batch = generate_batch_random
 elif which_batch == "wei":
+    print("wei")
     generate_batch = generate_batch_weighted
 else:
     print("unknown keyword batch")
