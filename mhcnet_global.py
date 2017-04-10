@@ -253,12 +253,12 @@ def make_model_gru(dir_name):
     pep_branch = PReLU()(pep_branch)
     
     merged = concatenate([pep_branch, mhc_branch])
-    merged = Dense(128, kernel_initializer="he_uniform")(merged)
+    merged = Dense(64, kernel_initializer="he_uniform")(merged)
     merged = BatchNormalization()(merged)
     merged = PReLU()(merged)
     merged = Dropout(.3)(merged)
     
-    merged = Dense(128, kernel_initializer="he_uniform")(merged)
+    merged = Dense(64, kernel_initializer="he_uniform")(merged)
     merged = BatchNormalization()(merged)
     merged = PReLU()(merged)
     merged = Dropout(.3)(merged)
@@ -435,8 +435,8 @@ def generate_batch_imba(X_list, y, batch_size):
             
 def generate_batch_balanced(X_list, y, batch_size):
     while True:
-        to_sample_strong = batch_size / 2
-        to_sample_weak   = batch_size / 2
+        to_sample_strong = batch_size // 2
+        to_sample_weak   = batch_size // 2
         sampled_indices_strong = indices_strong[randint(0, indices_strong.shape[0], size=to_sample_strong)]
         sampled_indices_weak   = indices_weak[randint(0, indices_weak.shape[0], size=to_sample_weak)]
         yield [np.vstack([X_list[0][sampled_indices_strong], X_list[0][sampled_indices_weak]]), \
