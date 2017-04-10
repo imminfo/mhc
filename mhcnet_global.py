@@ -1,7 +1,7 @@
 from __future__ import print_function, division
 from keras.models import Model, load_model
 from keras.layers import Dense, Activation, Dropout
-from keras.layers import LSTM, GRU, Bidirectional, Input, Conv1D
+from keras.layers import LSTM, GRU, Bidirectional, Input, Conv1D, average
 from keras.layers.core import Flatten
 from keras.layers.convolutional import Conv1D
 from keras.layers.pooling import MaxPooling1D
@@ -36,7 +36,7 @@ BIND_THR = 1 - np.log(500) / np.log(50000)
 
 VERBOSE=2
 BATCH_SIZE=32
-EPOCHS=100
+EPOCHS=80
 POOL_SIZE=2
 
 #theano.config.floatX="float32"
@@ -243,12 +243,16 @@ def make_model_lstm(dir_name):
 
 def make_model_gru(dir_name):
     mhc_in = Input(shape=(34,20))
-    mhc_branch = GRU(64, kernel_initializer="he_uniform", implementation=2, dropout=.2, recurrent_dropout=.2)(mhc_in)
+    mhc_branch = GRU(64, kernel_initializer="he_normal", recurrent_initializer="he_normal", 
+                       implementation=2, bias_initializer="he_normal",
+                       dropout=.2, recurrent_dropout=.2, unroll=True)(mhc_in)
     mhc_branch = BatchNormalization()(mhc_branch)
     mhc_branch = PReLU()(mhc_branch)
     
     pep_in = Input(shape=(9,20))
-    pep_branch = GRU(64, kernel_initializer="he_uniform", implementation=2, dropout=.2, recurrent_dropout=.2)(pep_in)
+    pep_branch = GRU(64, kernel_initializer="he_normal", recurrent_initializer="he_normal", 
+                       implementation=2, bias_initializer="he_normal",
+                       dropout=.2, recurrent_dropout=.2, unroll=True)(pep_in)
     pep_branch = BatchNormalization()(pep_branch)
     pep_branch = PReLU()(pep_branch)
     
@@ -381,6 +385,61 @@ def make_model_dense(dir_name):
     return model
 
 
+def make_model_bigru(dir_name):
+    gru_node = lambda x: GRU(64, kernel_initializer="he_normal", recurrent_initializer="he_normal", 
+                                 implementation=2, bias_initializer="he_normal",
+                                 dropout=.2, recurrent_dropout=.2, unroll=True, go_backwards = x)
+    
+    # MHC BiGRU
+    mhc_in = Input(shape=(34,20))
+    mhc_branch_forw = gru_node(False)(mhc_in)
+    mhc_branch_forw = BatchNormalization()(mhc_branch_forw)
+    mhc_branch_forw = PReLU()(mhc_branch_forw)
+    
+    mhc_branch_back = gru_node(True)(mhc_in)
+    mhc_branch_back = BatchNormalization()(mhc_branch_back)
+    mhc_branch_back = PReLU()(mhc_branch_back)
+    
+    mhc_branch = average([mhc_branch_forw, mhc_branch_back])
+    
+    # Peptide BiGRU
+    pep_in = Input(shape=(9,20))
+    pep_branch_forw = gru_node(False)(pep_in)
+    pep_branch_forw = BatchNormalization()(pep_branch_forw)
+    pep_branch_forw = PReLU()(pep_branch_forw)
+    
+    pep_branch_back = gru_node(True)(pep_in)
+    pep_branch_back = BatchNormalization()(pep_branch_back)
+    pep_branch_back = PReLU()(pep_branch_back)
+    
+    pep_branch = average([pep_branch_forw, pep_branch_back])
+    
+    # Merge branches
+    merged = concatenate([pep_branch, mhc_branch])
+    merged = Dense(64, kernel_initializer="he_uniform")(merged)
+    merged = BatchNormalization()(merged)
+    merged = PReLU()(merged)
+    merged = Dropout(.3)(merged)
+    
+    merged = Dense(64, kernel_initializer="he_uniform")(merged)
+    merged = BatchNormalization()(merged)
+    merged = PReLU()(merged)
+    merged = Dropout(.3)(merged)
+    
+    merged = Dense(1)(merged)
+    pred = PReLU()(merged)
+
+    model = Model([mhc_in, pep_in], pred)
+    model.compile(loss='mse', optimizer="nadam")
+    
+    with open(dir_name + "model.json", "w") as outf:
+        outf.write(model.to_json())
+        
+    return model
+    
+    
+
+
 which_model, which_batch = sys.argv[1].split("_")
 make_model = make_model_lstm
 if which_model == "lstm":
@@ -389,6 +448,9 @@ if which_model == "lstm":
 elif which_model == "gru":
     print("gru")
     make_model = make_model_gru
+elif which_model == "bigru":
+    print("bigru")
+    make_model = make_model_bigru
 elif which_model == "dense":
     print("dense")
     make_model = make_model_dense
@@ -516,7 +578,7 @@ for epoch in range(1, EPOCHS+1):
     for key in history.history.keys():
         with open(dir_name + "history." + key + ".txt", "a" if epoch > 1 else "w") as hist_file:
             hist_file.writelines("\n".join(map(str, history.history[key])) + "\n")
-            
+    
     y_pred = model.predict([X_mhc_test, X_pep_test])
     
     y_true_clf = np.zeros(y_test.shape)
@@ -536,21 +598,21 @@ for epoch in range(1, EPOCHS+1):
         hist_file.writelines(str(roc_auc_score(y_true_clf, y_pred_clf)) + "\n")
         
     
-    if epoch % 5 == 0:
-        data_d = {}
-        for file in [x for x in os.listdir(dir_name) if x.find("history") != -1]:
-            title = file[8:file.rfind(".txt")]
-            with open(dir_name+file) as inp:
-                data_d[title] = [float(y) for y in inp.readlines()]
-        print(data_d.keys())
+#     if epoch % 5 == 0:
+#         data_d = {}
+#         for file in [x for x in os.listdir(dir_name) if x.find("history") != -1]:
+#             title = file[8:file.rfind(".txt")]
+#             with open(dir_name+file) as inp:
+#                 data_d[title] = [float(y) for y in inp.readlines()]
+#         print(data_d.keys())
 
-        f, ax = plt.subplots(1,2, figsize=(16, 7))
-        sns.set_style("darkgrid")
-        ax[0].set_title("validation")
-        ax[0].plot(data_d["f1"], label="f1")
-        ax[0].plot(data_d["auc"], label="auc")
-        ax[0].legend()
-        ax[1].set_title("loss")
-        ax[1].plot(data_d["loss"], label="loss")
-        ax[1].legend()
-        f.savefig(dir_name + "output.pdf")
+#         f, ax = plt.subplots(1,2, figsize=(16, 7))
+#         sns.set_style("darkgrid")
+#         ax[0].set_title("validation")
+#         ax[0].plot(data_d["f1"], label="f1")
+#         ax[0].plot(data_d["auc"], label="auc")
+#         ax[0].legend()
+#         ax[1].set_title("loss")
+#         ax[1].plot(data_d["loss"], label="loss")
+#         ax[1].legend()
+#         f.savefig(dir_name + "output.pdf")
