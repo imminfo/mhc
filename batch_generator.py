@@ -1,39 +1,47 @@
 # From https://github.com/fchollet/keras/issues/1638
 import threading
 
-class threadsafe_iter:
-    """Takes an iterator/generator and makes it thread-safe by
-    serializing call to the `next` method of given iterator/generator.
-    """
-    def __init__(self, it):
-        self.it = it
-        self.lock = threading.Lock()
-
-    def __iter__(self):
-        return self
-
-    def next(self):
-        with self.lock:
-            return self.it.next()
+import numpy as np
+from numpy.random import randint
 
 
-def threadsafe_generator(f):
-    """A decorator that takes a generator function and makes it thread-safe.
-    """
-    def g(*a, **kw):
-        return threadsafe_iter(f(*a, **kw))
-    return g
+# class threadsafe_iter:
+#     """Takes an iterator/generator and makes it thread-safe by
+#     serializing call to the `next` method of given iterator/generator.
+#     """
+#     def __init__(self, it):
+#         self.it = it
+#         self.lock = threading.Lock()
+
+#     def __iter__(self):
+#         return self
+
+#     def __next__(self):
+#         with self.lock:
+#             return next(self.it)
+        
+#     def next(self):
+#         with self.lock:
+#             return self.it.next()
 
 
-@threadsafe_generator
+# def threadsafe_generator(f):
+#     """A decorator that takes a generator function and makes it thread-safe.
+#     """
+#     def g(*a, **kw):
+#         return threadsafe_iter(f(*a, **kw))
+#     return g
+
+
+# @threadsafe_generator
 def generate_batch_imba(X_list, y, batch_size):
     while True:
         sampled_indices = randint(0, X_list[0].shape[0], size=batch_size)
         yield [X_list[0][sampled_indices], X_list[1][sampled_indices]], y[sampled_indices]
 
             
-@threadsafe_generator
-def generate_batch_balanced(X_list, y, batch_size):
+# @threadsafe_generator
+def generate_batch_balanced(X_list, y, batch_size, indices_strong, indices_weak):
     while True:
         to_sample_strong = batch_size // 2
         to_sample_weak   = batch_size // 2
@@ -44,7 +52,7 @@ def generate_batch_balanced(X_list, y, batch_size):
               np.vstack([y[sampled_indices_strong], y[sampled_indices_weak]])
 
             
-@threadsafe_generator
+# @threadsafe_generator
 def generate_batch_random(X_list, y, batch_size):
     def rand_pep(peptide_len):
         pep = ""
@@ -68,7 +76,7 @@ def generate_batch_random(X_list, y, batch_size):
               np.vstack([y_pep, y[sampled_indices_strong], y[sampled_indices_weak]])
             
 
-@threadsafe_generator   
+# @threadsafe_generator   
 def generate_batch_weighted(X_list, y, batch_size):
     while True:
         to_sample_strong = int(batch_size / 2)

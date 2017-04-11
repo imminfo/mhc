@@ -274,10 +274,10 @@ else:
 
 print("Training...")
 for epoch in range(1, EPOCHS+1):
-    history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE), 
+    history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE, indices_strong, indices_weak), 
                                   steps_per_epoch = int(X_mhc_train.shape[0] / BATCH_SIZE),
                                   epochs=epoch, 
-                                  verbose=VERBOSE, workers=30,
+                                  verbose=VERBOSE,
                                   initial_epoch=epoch-1, 
                                   callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
     
