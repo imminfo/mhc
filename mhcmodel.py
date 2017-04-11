@@ -166,24 +166,24 @@ def make_model_dense(dir_name):
     pep_in = Input(shape=(9,20))
     pep_branch = Flatten()(pep_in)
     
-    pep_branch = Dense(128, kernel_initializer="he_uniform")(pep_branch)
+    pep_branch = Dense(128, kernel_initializer="he_normal")(pep_branch)
     pep_branch = BatchNormalization()(pep_branch)
     pep_branch = PReLU()(pep_branch)
     pep_branch = Dropout(.3)(pep_branch)
     
-    pep_branch = Dense(3, kernel_initializer="he_uniform")(pep_branch)
+    pep_branch = Dense(3, kernel_initializer="he_normal")(pep_branch)
     pep_branch = BatchNormalization()(pep_branch)
     pep_branch = PReLU()(pep_branch)
     pep_branch = Dropout(.3)(pep_branch)
     
 
     merged = concatenate([pep_branch, mhc_branch])
-    merged = Dense(128, kernel_initializer="he_uniform")(merged)
+    merged = Dense(128, kernel_initializer="he_normal")(merged)
     merged = BatchNormalization()(merged)
     merged = PReLU()(merged)
     merged = Dropout(.3)(merged)
     
-    merged = Dense(128, kernel_initializer="he_uniform")(merged)
+    merged = Dense(128, kernel_initializer="he_normal")(merged)
     merged = BatchNormalization()(merged)
     merged = PReLU()(merged)
     merged = Dropout(.3)(merged)
