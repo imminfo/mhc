@@ -39,7 +39,7 @@ BIND_THR = 1 - np.log(500) / np.log(50000)
 
 VERBOSE=2
 BATCH_SIZE=32
-EPOCHS=80
+EPOCHS=200
 POOL_SIZE=2
 
 #theano.config.floatX="float32"
@@ -213,6 +213,12 @@ if which_model == "lstm":
 elif which_model == "gru":
     print("gru")
     make_model = make_model_gru
+elif which_model == "gru2":
+    print("gru2")
+    make_model = make_model_gru2
+elif which_model == "gruCross":
+    print("gruCross")
+    make_model = make_model_gruCross
 elif which_model == "bigru":
     print("bigru")
     make_model = make_model_bigru
@@ -222,6 +228,9 @@ elif which_model == "dense":
 elif which_model == "cnn":
     print("cnn")
     make_model = make_model_cnn
+elif which_model == "cnn2":
+    print("cnn2")
+    make_model = make_model_cnn2
 else:
     print("unknown keyword model")
     sys.exit()

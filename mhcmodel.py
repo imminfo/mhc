@@ -1,7 +1,7 @@
 from __future__ import print_function, division
 from keras.models import Model, load_model
 from keras.layers import Dense, Activation, Dropout
-from keras.layers import LSTM, GRU, Bidirectional, Input, Conv1D, average
+from keras.layers import LSTM, GRU, Bidirectional, Input, Conv1D, average, add
 from keras.layers.core import Flatten
 from keras.layers.convolutional import Conv1D
 from keras.layers.pooling import MaxPooling1D
@@ -92,49 +92,177 @@ def make_model_gru(dir_name):
     return model
 
 
-def make_model_cnn(dir_name):
+def make_model_gru2(dir_name):
     mhc_in = Input(shape=(34,20))
-    mhc_branch = Conv1D(32, 5, kernel_initializer="he_uniform")(mhc_in)
+    mhc_branch = GRU(32, kernel_initializer="he_normal", recurrent_initializer="he_normal", 
+                       implementation=2, bias_initializer="he_normal",
+                       dropout=.2, recurrent_dropout=.2, unroll=True, return_sequences=True)(mhc_in)
+    mhc_branch = GRU(32, kernel_initializer="he_normal", recurrent_initializer="he_normal", 
+                   implementation=2, bias_initializer="he_normal",
+                   dropout=.2, recurrent_dropout=.2, unroll=True)(mhc_branch)
+    mhc_branch = BatchNormalization()(mhc_branch)
     mhc_branch = PReLU()(mhc_branch)
-    
-    mhc_branch = Conv1D(32, 3, kernel_initializer="he_uniform")(mhc_branch)
-    mhc_branch = PReLU()(mhc_branch)
-    
-    mhc_branch = MaxPooling1D(pool_size=POOL_SIZE)(mhc_branch)
-    mhc_branch = Dropout(.2)(mhc_branch)
-    
     
     pep_in = Input(shape=(9,20))
-    pep_branch = Conv1D(32, 5, kernel_initializer="he_uniform")(pep_in)
+    pep_branch = GRU(32, kernel_initializer="he_normal", recurrent_initializer="he_normal", 
+                       implementation=2, bias_initializer="he_normal",
+                       dropout=.2, recurrent_dropout=.2, unroll=True, return_sequences=True)(pep_in)    
+    pep_branch = GRU(32, kernel_initializer="he_normal", recurrent_initializer="he_normal", 
+                       implementation=2, bias_initializer="he_normal",
+                       dropout=.2, recurrent_dropout=.2, unroll=True)(pep_branch)
+    pep_branch = BatchNormalization()(pep_branch)
     pep_branch = PReLU()(pep_branch)
     
-    pep_branch = Conv1D(32, 3, kernel_initializer="he_uniform")(pep_branch)
-    pep_branch = PReLU()(pep_branch)
+    merged = concatenate([pep_branch, mhc_branch])
+    merged = Dense(64, kernel_initializer="he_uniform")(merged)
+    merged = BatchNormalization()(merged)
+    merged = PReLU()(merged)
+    merged = Dropout(.3)(merged)
     
-    pep_branch = MaxPooling1D(pool_size=POOL_SIZE)(pep_branch)
-    pep_branch = Dropout(.2)(pep_branch)
+    merged = Dense(64, kernel_initializer="he_uniform")(merged)
+    merged = BatchNormalization()(merged)
+    merged = PReLU()(merged)
+    merged = Dropout(.3)(merged)
     
+    merged = Dense(1)(merged)
+    pred = PReLU()(merged)
+
+    model = Model([mhc_in, pep_in], pred)
+    model.compile(loss='mse', optimizer="nadam")
+    
+    with open(dir_name + "model.json", "w") as outf:
+        outf.write(model.to_json())
+        
+    return model
+
+
+def make_model_cnn(dir_name):
+    def _block(prev_layer, shape):
+        branch = BatchNormalization()(prev_layer)
+        branch = PReLU()(branch)
+        branch = Conv1D(192, 1, kernel_initializer="he_normal")(branch)
+        
+        branch = BatchNormalization()(branch)
+        branch = PReLU()(branch)
+        branch = Conv1D(shape[1], 1, kernel_initializer="he_normal")(branch)
+        
+        return add([prev_layer, branch])
+    
+    mhc_in = Input(shape=(34,20))
+    mhc_branch = _block(mhc_in, (34,20))
+    
+    pep_in = Input(shape=(9,20))
+    pep_branch = _block(pep_in, (9,20))
     
     mhc_branch = Flatten()(mhc_branch)
     pep_branch = Flatten()(pep_branch)
 
-    
     merged = concatenate([pep_branch, mhc_branch])
-    merged = Dense(128, kernel_initializer="he_uniform")(merged)
-    merged = Dropout(.3)(merged)
+    merged = Dense(64, kernel_initializer="he_normal")(merged)
+    merged = BatchNormalization()(merged)
     merged = PReLU()(merged)
+    merged = Dropout(.3)(merged)
     
-    merged = Dense(64, kernel_initializer="he_uniform")(merged)
-    merged = Dropout(.3)(merged)
+    merged = Dense(64, kernel_initializer="he_normal")(merged)
+    merged = BatchNormalization()(merged)
     merged = PReLU()(merged)
+    merged = Dropout(.3)(merged)
     
-    merged = Dense(16, kernel_initializer="he_uniform")(merged)
-    merged = Dropout(.3)(merged)
-    merged = PReLU()(merged)
+    merged = Dense(1)(merged)
+    pred = PReLU()(merged)
+
+    model = Model([mhc_in, pep_in], pred)
+    model.compile(loss='mse', optimizer="nadam")
     
-    merged = Dense(8, kernel_initializer="he_uniform")(merged)
-    merged = Dropout(.3)(merged)
+    with open(dir_name + "model.json", "w") as outf:
+        outf.write(model.to_json())
+        
+    return model
+
+
+def make_model_cnn2(dir_name):
+    def _block(prev_layer, shape):
+        branch = BatchNormalization()(prev_layer)
+        branch = PReLU()(branch)
+        branch = Conv1D(192, 1, kernel_initializer="he_normal")(branch)
+        
+        branch = BatchNormalization()(branch)
+        branch = PReLU()(branch)
+        branch = Conv1D(128, 1, kernel_initializer="he_normal")(branch)
+        
+        # branch = BatchNormalization()(branch)
+        # branch = PReLU()(branch)
+        # branch = Conv1D(64, 1, kernel_initializer="he_normal")(branch)
+        
+        branch = BatchNormalization()(branch)
+        branch = PReLU()(branch)
+        branch = Conv1D(shape[1], 1, kernel_initializer="he_normal")(branch)
+        
+        return add([prev_layer, branch])
+    
+    mhc_in = Input(shape=(34,20))
+    mhc_branch = _block(mhc_in, (34,20))
+    
+    pep_in = Input(shape=(9,20))
+    pep_branch = _block(pep_in, (9,20))
+    
+    mhc_branch = Flatten()(mhc_branch)
+    pep_branch = Flatten()(pep_branch)
+
+    merged = concatenate([pep_branch, mhc_branch])
+    merged = Dense(64, kernel_initializer="he_normal")(merged)
+    merged = BatchNormalization()(merged)
     merged = PReLU()(merged)
+    merged = Dropout(.3)(merged)
+    
+    merged = Dense(64, kernel_initializer="he_normal")(merged)
+    merged = BatchNormalization()(merged)
+    merged = PReLU()(merged)
+    merged = Dropout(.3)(merged)
+    
+    merged = Dense(1)(merged)
+    pred = PReLU()(merged)
+
+    model = Model([mhc_in, pep_in], pred)
+    model.compile(loss='mse', optimizer="nadam")
+    
+    with open(dir_name + "model.json", "w") as outf:
+        outf.write(model.to_json())
+        
+    return model
+
+
+def make_model_cnn3(dir_name):
+    def _block(prev_layer, shape):
+        branch = BatchNormalization()(prev_layer)
+        branch = PReLU()(branch)
+        branch = Conv1D(192, 1, kernel_initializer="he_normal")(branch)
+        
+        branch = BatchNormalization()(branch)
+        branch = PReLU()(branch)
+        branch = Conv1D(shape[1], 1, kernel_initializer="he_normal")(branch)
+        
+        return add([prev_layer, branch])
+    
+    mhc_in = Input(shape=(34,20))
+    mhc_branch = _block(mhc_in, (34,20)) 
+    
+    pep_in = Input(shape=(9,20))
+    pep_branch = _block(pep_in, (9,20))
+    
+    mhc_branch = Flatten()(mhc_branch)
+    pep_branch = Flatten()(pep_branch)
+
+    merged = concatenate([pep_branch, mhc_branch])
+    merged = Dense(64, kernel_initializer="he_normal")(merged)
+    merged = BatchNormalization()(merged)
+    merged = PReLU()(merged)
+    merged = Dropout(.3)(merged)
+    
+    merged = Dense(64, kernel_initializer="he_normal")(merged)
+    merged = BatchNormalization()(merged)
+    merged = PReLU()(merged)
+    merged = Dropout(.3)(merged)
     
     merged = Dense(1)(merged)
     pred = PReLU()(merged)
@@ -152,12 +280,12 @@ def make_model_dense(dir_name):
     mhc_in = Input(shape=(34,20))
     mhc_branch = Flatten()(mhc_in)
     
-    mhc_branch = Dense(64, kernel_initializer="he_uniform")(mhc_branch)
+    mhc_branch = Dense(64, kernel_initializer="he_normal")(mhc_branch)
     mhc_branch = BatchNormalization()(mhc_branch)
     mhc_branch = PReLU()(mhc_branch)
     mhc_branch = Dropout(.3)(mhc_branch)
     
-    # mhc_branch = Dense(32, kernel_initializer="he_uniform")(mhc_branch)
+    # mhc_branch = Dense(32, kernel_initializer="he_normal")(mhc_branch)
     # mhc_branch = BatchNormalization()(mhc_branch)
     # mhc_branch = PReLU()(mhc_branch)
     # mhc_branch = Dropout(.3)(mhc_branch)
@@ -178,7 +306,7 @@ def make_model_dense(dir_name):
     
 
     merged = concatenate([pep_branch, mhc_branch])
-    merged = Dense(64, kernel_initializer="he_normal")(merged)
+    merged = Dense(128, kernel_initializer="he_normal")(merged)
     merged = BatchNormalization()(merged)
     merged = PReLU()(merged)
     merged = Dropout(.3)(merged)
