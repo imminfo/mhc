@@ -34,6 +34,9 @@ from mhcmodel import *
 from batch_generator import *
 
 
+sys.setrecursionlimit(10000)
+
+
 BIND_THR = 1 - np.log(500) / np.log(50000)
 
 
@@ -231,6 +234,15 @@ elif which_model == "cnn":
 elif which_model == "cnn2":
     print("cnn2")
     make_model = make_model_cnn2
+elif which_model == "cnn3":
+    print("cnn3")
+    make_model = make_model_cnn3
+elif which_model == "cnnrnn":
+    print("cnnrnn")
+    make_model = make_model_cnnrnn
+elif which_model == "cnnrnn2":
+    print("cnnrnn2")
+    make_model = make_model_cnnrnn2
 else:
     print("unknown keyword model")
     sys.exit()
@@ -257,7 +269,7 @@ else:
     model = make_model(dir_name)
 
 
-print(model.summary())    
+# print(model.summary())
 
 
 ###################
