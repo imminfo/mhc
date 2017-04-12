@@ -77,7 +77,7 @@ def generate_batch_random(X_list, y, batch_size):
             
 
 # @threadsafe_generator   
-def generate_batch_weighted(X_list, y, batch_size):
+def generate_batch_weighted(X_list, y, batch_size, indices_strong, indices_weak, weights_train):
     while True:
         to_sample_strong = int(batch_size / 2)
         to_sample_weak   = int(batch_size / 2)

@@ -42,7 +42,7 @@ BIND_THR = 1 - np.log(500) / np.log(50000)
 
 VERBOSE=2
 BATCH_SIZE=32
-EPOCHS=200
+EPOCHS=100
 POOL_SIZE=2
 
 #theano.config.floatX="float32"
@@ -237,12 +237,18 @@ elif which_model == "cnn2":
 elif which_model == "cnn3":
     print("cnn3")
     make_model = make_model_cnn3
+elif which_model == "cnn4":
+    print("cnn4")
+    make_model = make_model_cnn4
 elif which_model == "cnnrnn":
     print("cnnrnn")
     make_model = make_model_cnnrnn
 elif which_model == "cnnrnn2":
     print("cnnrnn2")
     make_model = make_model_cnnrnn2
+elif which_model == "cnnrnn3":
+    print("cnnrnn3")
+    make_model = make_model_cnnrnn3
 else:
     print("unknown keyword model")
     sys.exit()
@@ -295,7 +301,7 @@ else:
 
 print("Training...")
 for epoch in range(1, EPOCHS+1):
-    history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE, indices_strong, indices_weak), 
+    history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE, indices_strong, indices_weak, weights_train), 
                                   steps_per_epoch = int(X_mhc_train.shape[0] / BATCH_SIZE),
                                   epochs=epoch, 
                                   verbose=VERBOSE,
