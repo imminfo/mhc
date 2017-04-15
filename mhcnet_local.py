@@ -79,20 +79,6 @@ def read_df(filepath):
     df = df.loc[df.mhc != "HLAB60", :]
     
     return df
-    
-    
-def pv_vec(seq, protvec):
-    res = np.zeros((100, len(seq) - 2), dtype=float)
-    for i in range(len(seq) - 2):
-        res[:, i] = protvec[seq[i:i+3]]
-    return res
-
-
-def pv_sum(seq, protvec):
-    res = np.zeros((100,), dtype=float)
-    for i in range(len(seq) - 2):
-        res += protvec[seq[i:i+3]]
-    return res
 
 
 def vectorize_mhc(seq_vec, name_vec, max_len, chars):
@@ -112,21 +98,6 @@ def vectorize_xy(seq_vec, affin_vec, max_len, chars):
             X[i, row, char_indices[char]] = 1
     return X, y.reshape(len(seq_vec), 1)
 
-
-
-#########################
-# Load the ProtVec data #
-#########################
-"""
-protvec_df = pd.read_table("data/protvec.csv", sep = "\\t", header=None)
-protvec = {}
-for ind, row in protvec_df.iterrows():
-    row = list(row)
-    row[0] = row[0][1:]
-    row[-1] = row[-1][:-1]
-    protvec[row[0]] = np.array(row[1:], dtype=float)
-"""
-
     
 #####################
 # Prepare the chars #
@@ -142,9 +113,20 @@ indices_char = dict((i, c) for i, c in enumerate(chars))
 # Load the MHC data #
 #####################
 print("Load MHC")
-mhc_df = pd.read_csv("data/mhc_seq_imghtla.csv")
-MAX_MHC_LEN = max([len(x) for x in mhc_df["pseudo"]])
-X_mhc = vectorize_mhc(mhc_df["pseudo"], mhc_df["mhc"], MAX_MHC_LEN, chars)
+# mhc_df = pd.read_csv("data/mhc_seq_imghtla.csv")
+mhc_df = pd.read_csv("data/mhc_nature.csv")
+mhc_vec = mhc_df["mhc"].unique()
+
+mhc_map = {}
+for mhc_i in range(len(mhc_df)):
+    mhc_map[mhc_df["mhc"][mhc_i]] = mhc_df["pseudo"][mhc_i]
+    
+rev_mhc_map = {}
+for mhc_i in range(len(mhc_df)):
+    if mhc_df["pseudo"][mhc_i] not in rev_mhc_map:
+        rev_mhc_map[mhc_df["pseudo"][mhc_i]] = []
+    rev_mhc_map[mhc_df["pseudo"][mhc_i]].append(mhc_df["mhc"][mhc_i])
+
 
 
 ##########################
@@ -157,24 +139,24 @@ human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 MAX_PEP_LEN = max([len(x) for x in human_df["sequence"]])
 X_pep_train, y_train = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
-X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
-for i, mhc in enumerate(human_df["mhc"]):
-    X_mhc_train[i,:,:] = X_mhc[mhc]
 print(X_pep_train.shape)
-print(X_mhc_train.shape)
 
-indices_strong = np.nonzero(np.array(y_train >= BIND_THR))[0]
-indices_weak   = np.nonzero(np.array(y_train < BIND_THR))[0]
-print("indices shapes:")
-print(indices_strong.shape)
-print(indices_weak.shape)
-assert(indices_strong.shape[0] + indices_weak.shape[0] == X_pep_train.shape[0])
+ps_arr = np.array([mhc_map[x] for x in human_df["mhc"]]).reshape((-1, 1))
+ps_uniq = np.unique(ps_arr)
 
-_, mhc_unique_indices = np.unique(mhc_df["pseudo"], return_index=True)
-X_mhc_unique = np.zeros((mhc_unique_indices.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
-for i, j in enumerate(mhc_unique_indices):
-    X_mhc_unique[i,:,:] = X_mhc[mhc_df["mhc"].loc[j]]
-    
+indices_strong = {}
+indices_weak   = {}
+for ps in ps_uniq:
+    tmp1 = np.nonzero(np.array(y_train >= BIND_THR) & (ps_arr == ps))[0]
+    tmp2 = np.nonzero(np.array(y_train < BIND_THR) & (ps_arr == ps))[0]
+    if (tmp1.shape[0] >= 50) and (tmp2.shape[0] >= 50):
+        indices_strong[ps] = tmp1
+        indices_weak[ps]   = tmp2
+        print(indices_strong[ps].shape[0], indices_weak[ps].shape[0], rev_mhc_map[ps])
+    else:
+        print("Skipping", tmp1.shape[0], tmp2.shape[0], rev_mhc_map[ps])
+# assert(indices_strong.shape[0] + indices_weak.shape[0] == X_pep_train.shape[0])
+
 weights_train = np.exp(stats.beta.pdf(y_train, a=3.75, b=5))
 
 
@@ -187,72 +169,111 @@ human_df = df.loc[df.species == "human", :]
 human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 X_pep_test, y_test = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
-X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
-for i, mhc in enumerate(human_df["mhc"]):
-    X_mhc_test[i,:,:] = X_mhc[mhc]
 print(X_pep_test.shape)
-print(X_mhc_test.shape)
+
+ps_arr = np.array([mhc_map[x] for x in human_df["mhc"]]).reshape((-1, 1))
+indices_test = {}
+for ps in ps_uniq:
+    tmp = np.nonzero((ps_arr == ps))[0]
+    if ps in indices_strong:
+        indices_test[ps] = tmp
+        print(indices_test[ps].shape[0], rev_mhc_map[ps])
+    else:
+        print("Skipping", rev_mhc_map[ps])
 
 weights_test = np.exp(stats.beta.pdf(y_test, a=3.75, b=5))
-
-
-# X_pep_train = X_pep_train.reshape((X_pep_train.shape[0], X_pep_train.shape[1] * X_pep_train.shape[2]))
-# X_mhc_train = X_mhc_train.reshape((X_mhc_train.shape[0], X_mhc_train.shape[1] * X_mhc_train.shape[2]))
-# X_pep_test = X_pep_test.reshape((X_pep_test.shape[0], X_pep_test.shape[1] * X_pep_test.shape[2]))
-# X_mhc_test = X_mhc_test.reshape((X_mhc_test.shape[0], X_mhc_test.shape[1] * X_mhc_test.shape[2]))
-
-# X_train = np.hstack([X_pep_train, X_mhc_train])
-# X_test = np.hstack([X_pep_test, X_mhc_test])
 
 
 ###################
 # Build the model #
 ###################
+def make_model_cnn(dir_name):
+    def _block(prev_layer, shape):
+        branch = BatchNormalization()(prev_layer)
+        branch = PReLU()(branch)
+        # branch = Conv1D(192, 1, kernel_initializer="he_normal")(branch)
+        branch = Conv1D(1, 1, kernel_initializer="he_normal")(branch)
+        
+        # branch = BatchNormalization()(branch)
+        branch = PReLU()(branch)
+        branch = Conv1D(shape[1], 1, kernel_initializer="he_normal")(branch)
+        
+        return add([prev_layer, branch])
+    
+    pep_in = Input(shape=(9,20))
+    pep_branch = _block(pep_in, (9,20))
+    
+    pep_branch = Flatten()(pep_branch)
+
+    pep_branch = Dense(1, kernel_initializer="he_normal")(pep_branch)
+    # pep_branch = Dense(64, kernel_initializer="he_normal")(pep_branch)
+    # pep_branch = BatchNormalization()(pep_branch)
+    pep_branch = PReLU()(pep_branch)
+    pep_branch = Dropout(.3)(pep_branch)
+    
+    # pep_branch = Dense(64, kernel_initializer="he_normal")(pep_branch)
+    # pep_branch = BatchNormalization()(pep_branch)
+    # pep_branch = PReLU()(pep_branch)
+    # pep_branch = Dropout(.3)(pep_branch)
+    
+    pep_branch = Dense(1)(pep_branch)
+    pred = PReLU()(pep_branch)
+
+    model = Model(pep_in, pred)
+    model.compile(loss='mse', optimizer="nadam")
+    
+    with open(dir_name + "model.json", "w") as outf:
+        outf.write(model.to_json())
+        
+    return model
+
 which_model, which_batch = sys.argv[1].split("_")
-make_model = make_model_lstm
-if which_model == "lstm":
-    print("lstm")
-    make_model = make_model_lstm
-elif which_model == "gru":
-    print("gru")
-    make_model = make_model_gru
-elif which_model == "gru2":
-    print("gru2")
-    make_model = make_model_gru2
-elif which_model == "gruCross":
-    print("gruCross")
-    make_model = make_model_gruCross
-elif which_model == "bigru":
-    print("bigru")
-    make_model = make_model_bigru
-elif which_model == "dense":
-    print("dense")
-    make_model = make_model_dense
-elif which_model == "cnn":
-    print("cnn")
-    make_model = make_model_cnn
-elif which_model == "cnn2":
-    print("cnn2")
-    make_model = make_model_cnn2
-elif which_model == "cnn3":
-    print("cnn3")
-    make_model = make_model_cnn3
-elif which_model == "cnnrnn":
-    print("cnnrnn")
-    make_model = make_model_cnnrnn
-elif which_model == "cnnrnn2":
-    print("cnnrnn2")
-    make_model = make_model_cnnrnn2
-else:
-    print("unknown keyword model")
-    sys.exit()
+make_model = make_model_cnn
+# if which_model == "lstm":
+#     print("lstm")
+#     make_model = make_model_lstm
+# elif which_model == "gru":
+#     print("gru")
+#     make_model = make_model_gru
+# elif which_model == "gru2":
+#     print("gru2")
+#     make_model = make_model_gru2
+# elif which_model == "gruCross":
+#     print("gruCross")
+#     make_model = make_model_gruCross
+# elif which_model == "bigru":
+#     print("bigru")
+#     make_model = make_model_bigru
+# elif which_model == "dense":
+#     print("dense")
+#     make_model = make_model_dense
+# elif which_model == "cnn":
+#     print("cnn")
+#     make_model = make_model_cnn
+# elif which_model == "cnn2":
+#     print("cnn2")
+#     make_model = make_model_cnn2
+# elif which_model == "cnn3":
+#     print("cnn3")
+#     make_model = make_model_cnn3
+# elif which_model == "cnnrnn":
+#     print("cnnrnn")
+#     make_model = make_model_cnnrnn
+# elif which_model == "cnnrnn2":
+#     print("cnnrnn2")
+#     make_model = make_model_cnnrnn2
+# else:
+#     print("unknown keyword model")
+#     sys.exit()
 
 
-dir_name = "models/" + sys.argv[1] + "/"
+dir_name = "models_local/" + sys.argv[1] + "/"
+model_list = {}
 if len(sys.argv) > 2:
     if sys.argv[2] == "-r":
         print("Cleaning", dir_name)
-        shutil.rmtree(dir_name)
+        if os.path.exists(dir_name):
+            shutil.rmtree(dir_name)
         os.makedirs(dir_name)
         model = make_model(dir_name)
     else:
@@ -266,7 +287,10 @@ else:
         print(dir_name, "exists! Remove / rename it to proceed. Exiting...")
         sys.exit()
     
-    model = make_model(dir_name)
+print("Building models...")
+for ps_i, ps in enumerate(ps_uniq):
+    print(ps_i, "/", len(ps_uniq) + 1, " - ", ps)
+    model_list[ps] = make_model(dir_name)
 
 
 # print(model.summary())
@@ -275,45 +299,54 @@ else:
 ###################
 # Train the model #
 ###################
-generate_batch = generate_batch_imba
-if which_batch == "imba":
-    print("imba")
-    generate_batch = generate_batch_imba
-elif which_batch == "bal":
-    print("bal")
-    generate_batch = generate_batch_balanced
-elif which_batch == "rand":
-    print("rand")
-    generate_batch = generate_batch_random
-elif which_batch == "wei":
-    print("wei")
-    generate_batch = generate_batch_weighted
-else:
-    print("unknown keyword batch")
-    sys.exit()
+# generate_batch = generate_batch_imba
+# if which_batch == "imba":
+#     print("imba")
+#     generate_batch = generate_batch_imba
+# elif which_batch == "bal":
+#     print("bal")
+#     generate_batch = generate_batch_balanced
+# elif which_batch == "rand":
+#     print("rand")
+#     generate_batch = generate_batch_random
+# elif which_batch == "wei":
+#     print("wei")
+#     generate_batch = generate_batch_weighted
+# else:
+#     print("unknown keyword batch")
+#     sys.exit()
 
+def generate_batch(X, y, batch_size, indices_strong, indices_weak):
+    while True:
+        to_sample_strong = batch_size // 2
+        to_sample_weak   = batch_size // 2
+        sampled_indices_strong = indices_strong[randint(0, indices_strong.shape[0], size=to_sample_strong)]
+        sampled_indices_weak   = indices_weak[randint(0, indices_weak.shape[0], size=to_sample_weak)]
+        yield np.vstack([X[sampled_indices_strong], X[sampled_indices_weak]]), \
+              np.vstack([y[sampled_indices_strong], y[sampled_indices_weak]])
+            
 
 print("Training...")
+EPOCHS=30
 for epoch in range(1, EPOCHS+1):
-    history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE, indices_strong, indices_weak), 
-                                  steps_per_epoch = int(X_mhc_train.shape[0] / BATCH_SIZE),
-                                  epochs=epoch, 
-                                  verbose=VERBOSE,
-                                  initial_epoch=epoch-1, 
-                                  callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
+    y_pred = np.zeros(y_test.shape)
     
-    # history = model.fit([X_mhc_train, X_pep_train], y_train, 
-    #                               batch_size=BATCH_SIZE,
-    #                               epochs=epoch, 
-    #                               verbose=VERBOSE, 
-    #                               initial_epoch=epoch-1, 
-    #                               callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
+    for ps_i, ps in enumerate(ps_uniq):
+        print(rev_mhc_map[ps])
+        if ps not in indices_strong.keys():
+            print("skip")
+            continue
+        model_list[ps].fit_generator(generate_batch(X_pep_train, y_train, BATCH_SIZE, indices_strong[ps], indices_weak[ps]), 
+                                           steps_per_epoch = int(X_pep_train.shape[0] / BATCH_SIZE),
+                                           epochs=epoch, verbose=VERBOSE,
+                                           initial_epoch=epoch-1, callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
+        
+        y_pred[indices_strong[ps]] = model_list[ps].predict(X_pep_train[indices_strong[ps]])
+        y_pred[indices_weak[ps]]   = model_list[ps].predict(X_pep_train[indices_weak[ps]])
     
-    for key in history.history.keys():
-        with open(dir_name + "history." + key + ".txt", "a" if epoch > 1 else "w") as hist_file:
-            hist_file.writelines("\n".join(map(str, history.history[key])) + "\n")
-          
-    y_pred = model.predict([X_mhc_test, X_pep_test])
+    # for key in history.history.keys():
+    #     with open(dir_name + "history." + key + ".txt", "a" if epoch > 1 else "w") as hist_file:
+    #         hist_file.writelines("\n".join(map(str, history.history[key])) + "\n")
     
     y_true_clf = np.zeros(y_test.shape)
     y_true_clf[np.array(y_test >= BIND_THR)] = 1
@@ -330,23 +363,3 @@ for epoch in range(1, EPOCHS+1):
         hist_file.writelines(str(f1_score(y_true_clf, y_pred_clf)) + "\n")
     with open(dir_name + "history.auc.txt", "a" if epoch > 1 else "w") as hist_file:
         hist_file.writelines(str(roc_auc_score(y_true_clf, y_pred_clf)) + "\n")
-        
-    
-#     if epoch % 5 == 0:
-#         data_d = {}
-#         for file in [x for x in os.listdir(dir_name) if x.find("history") != -1]:
-#             title = file[8:file.rfind(".txt")]
-#             with open(dir_name+file) as inp:
-#                 data_d[title] = [float(y) for y in inp.readlines()]
-#         print(data_d.keys())
-
-#         f, ax = plt.subplots(1,2, figsize=(16, 7))
-#         sns.set_style("darkgrid")
-#         ax[0].set_title("validation")
-#         ax[0].plot(data_d["f1"], label="f1")
-#         ax[0].plot(data_d["auc"], label="auc")
-#         ax[0].legend()
-#         ax[1].set_title("loss")
-#         ax[1].plot(data_d["loss"], label="loss")
-#         ax[1].legend()
-#         f.savefig(dir_name + "output.pdf")

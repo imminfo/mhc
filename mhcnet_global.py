@@ -142,7 +142,8 @@ indices_char = dict((i, c) for i, c in enumerate(chars))
 # Load the MHC data #
 #####################
 print("Load MHC")
-mhc_df = pd.read_csv("data/mhc_seq_imghtla.csv")
+# mhc_df = pd.read_csv("data/mhc_seq_imghtla.csv")
+mhc_df = pd.read_csv("data/mhc_nature.csv")
 MAX_MHC_LEN = max([len(x) for x in mhc_df["pseudo"]])
 X_mhc = vectorize_mhc(mhc_df["pseudo"], mhc_df["mhc"], MAX_MHC_LEN, chars)
 
@@ -301,7 +302,7 @@ else:
 
 print("Training...")
 for epoch in range(1, EPOCHS+1):
-    history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE, indices_strong, indices_weak, weights_train), 
+    history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE, indices_strong, indices_weak), 
                                   steps_per_epoch = int(X_mhc_train.shape[0] / BATCH_SIZE),
                                   epochs=epoch, 
                                   verbose=VERBOSE,
