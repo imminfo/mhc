@@ -200,8 +200,8 @@ def make_model_cnn2(dir_name):
         
         return add([prev_layer, branch])
     
-    mhc_in = Input(shape=(34,20))
-    mhc_branch = _block(mhc_in, (34,20))
+    mhc_in = Input(shape=(48,20))
+    mhc_branch = _block(mhc_in, (48,20))
     
     pep_in = Input(shape=(9,20))
     pep_branch = _block(pep_in, (9,20))
