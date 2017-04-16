@@ -42,7 +42,7 @@ BIND_THR = 1 - np.log(500) / np.log(50000)
 
 VERBOSE=2
 BATCH_SIZE=32
-EPOCHS=100
+EPOCHS=300
 POOL_SIZE=2
 
 #theano.config.floatX="float32"

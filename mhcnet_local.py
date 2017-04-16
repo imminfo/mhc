@@ -4,8 +4,9 @@ from keras.layers import Dense, Activation, Dropout
 from keras.layers import LSTM, GRU, Bidirectional, Input, Conv1D, average
 from keras.layers.core import Flatten
 from keras.layers.convolutional import Conv1D
-from keras.layers.pooling import MaxPooling1D
+from keras.layers.pooling import MaxPooling1D, GlobalAveragePooling1D, GlobalMaxPooling1D
 from keras.layers.normalization import BatchNormalization
+from keras.optimizers import Nadam
 from keras.layers.embeddings import Embedding
 from keras.layers.merge import concatenate
 from keras.layers.advanced_activations import PReLU
@@ -40,9 +41,9 @@ sys.setrecursionlimit(10000)
 BIND_THR = 1 - np.log(500) / np.log(50000)
 
 
-VERBOSE=2
-BATCH_SIZE=32
-EPOCHS=200
+VERBOSE=0
+BATCH_SIZE=16
+EPOCHS=300
 POOL_SIZE=2
 
 #theano.config.floatX="float32"
@@ -77,6 +78,9 @@ def read_df(filepath):
     df.loc[df.mhc == "HLACw4", "mhc"] = "HLAC0401"
 
     df = df.loc[df.mhc != "HLAB60", :]
+    
+    # df = df.ix[df["mhc"] == "HLAB4601", :]
+    #HLAB4601
     
     return df
 
@@ -132,30 +136,38 @@ for mhc_i in range(len(mhc_df)):
 ##########################
 # Load the training data #
 ##########################
-print("Load train")
+print("Load train...", end = "")
 df = read_df("data/bdata.2009.tsv")
 human_df = df.loc[df.species == "human", :]
 human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 MAX_PEP_LEN = max([len(x) for x in human_df["sequence"]])
 X_pep_train, y_train = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
-print(X_pep_train.shape)
+print(X_pep_train.shape[0], "samples")
 
 ps_arr = np.array([mhc_map[x] for x in human_df["mhc"]]).reshape((-1, 1))
 ps_uniq = np.unique(ps_arr)
 
 indices_strong = {}
 indices_weak   = {}
-for ps in ps_uniq:
+indices_train  = {}
+to_leave = []
+for i, ps in enumerate(ps_uniq):
     tmp1 = np.nonzero(np.array(y_train >= BIND_THR) & (ps_arr == ps))[0]
     tmp2 = np.nonzero(np.array(y_train < BIND_THR) & (ps_arr == ps))[0]
-    if (tmp1.shape[0] >= 50) and (tmp2.shape[0] >= 50):
+    tmp3 = np.nonzero(ps_arr == ps)[0]
+    if (tmp1.shape[0] >= 20) and (tmp2.shape[0] >= 20):
         indices_strong[ps] = tmp1
         indices_weak[ps]   = tmp2
-        print(indices_strong[ps].shape[0], indices_weak[ps].shape[0], rev_mhc_map[ps])
-    else:
-        print("Skipping", tmp1.shape[0], tmp2.shape[0], rev_mhc_map[ps])
-# assert(indices_strong.shape[0] + indices_weak.shape[0] == X_pep_train.shape[0])
+        indices_train[ps]  = tmp3
+        # print(indices_strong[ps].shape[0], indices_weak[ps].shape[0], rev_mhc_map[ps])
+        to_leave.append(i)
+    # else:
+        # print("Skipping", tmp1.shape[0], tmp2.shape[0], rev_mhc_map[ps])
+print("[train] filter out some MHC:", ps_uniq.shape[0], "-> ", end="")
+ps_uniq = ps_uniq[to_leave]
+print(ps_uniq.shape[0])
+# assert(sum(indices_strong.values(), key = lambda x:) + sum() == X_pep_train.shape[0])
 
 weights_train = np.exp(stats.beta.pdf(y_train, a=3.75, b=5))
 
@@ -163,23 +175,30 @@ weights_train = np.exp(stats.beta.pdf(y_train, a=3.75, b=5))
 ####################
 # Load the CV data #
 ####################
-print("Load CV")
+print("Load CV...", end = "")
 df = read_df("data/blind.tsv")
 human_df = df.loc[df.species == "human", :]
 human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 X_pep_test, y_test = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
-print(X_pep_test.shape)
+print(X_pep_test.shape[0], "samples")
 
 ps_arr = np.array([mhc_map[x] for x in human_df["mhc"]]).reshape((-1, 1))
 indices_test = {}
-for ps in ps_uniq:
+to_drop = []
+for i, ps in enumerate(ps_uniq):
     tmp = np.nonzero((ps_arr == ps))[0]
-    if ps in indices_strong:
+    if ps in indices_strong and tmp.sum() > 0:
         indices_test[ps] = tmp
-        print(indices_test[ps].shape[0], rev_mhc_map[ps])
+        # print(indices_test[ps].shape[0], rev_mhc_map[ps])
     else:
-        print("Skipping", rev_mhc_map[ps])
+        # print("Skipping", rev_mhc_map[ps])
+        indices_strong.pop(ps)
+        indices_weak.pop(ps)
+        to_drop.append(i)
+print("[test] filter out some MHC:", ps_uniq.shape[0], "-> ", end="")
+ps_uniq = np.delete(ps_uniq, to_drop)
+print(ps_uniq.shape[0])
 
 weights_test = np.exp(stats.beta.pdf(y_test, a=3.75, b=5))
 
@@ -188,84 +207,45 @@ weights_test = np.exp(stats.beta.pdf(y_test, a=3.75, b=5))
 # Build the model #
 ###################
 def make_model_cnn(dir_name):
-    def _block(prev_layer, shape):
+    def _block(prev_layer, shape, mid_filters=128):
         branch = BatchNormalization()(prev_layer)
         branch = PReLU()(branch)
-        # branch = Conv1D(192, 1, kernel_initializer="he_normal")(branch)
-        branch = Conv1D(1, 1, kernel_initializer="he_normal")(branch)
+        branch = Dropout(.5)(branch)
         
-        # branch = BatchNormalization()(branch)
+        branch = Conv1D(mid_filters, 1, kernel_initializer="he_normal")(branch)
+        branch = BatchNormalization()(branch)
         branch = PReLU()(branch)
-        branch = Conv1D(shape[1], 1, kernel_initializer="he_normal")(branch)
         
+        branch = Conv1D(shape[1], 1, kernel_initializer="he_normal")(branch)
         return add([prev_layer, branch])
     
     pep_in = Input(shape=(9,20))
-    pep_branch = _block(pep_in, (9,20))
+    pep_branch = _block(pep_in, (9,20), 128)
+    pep_branch = _block(pep_in, (9,20), 256)
+    pep_branch = _block(pep_in, (9,20), 512)
+    pep_branch = _block(pep_in, (9,20), 512)
     
-    pep_branch = Flatten()(pep_branch)
-
-    pep_branch = Dense(1, kernel_initializer="he_normal")(pep_branch)
-    # pep_branch = Dense(64, kernel_initializer="he_normal")(pep_branch)
-    # pep_branch = BatchNormalization()(pep_branch)
-    pep_branch = PReLU()(pep_branch)
-    pep_branch = Dropout(.3)(pep_branch)
-    
-    # pep_branch = Dense(64, kernel_initializer="he_normal")(pep_branch)
+    # pep_branch = GRU(32, kernel_initializer="he_normal", recurrent_initializer="he_normal", 
+    #                    implementation=2, bias_initializer="he_normal",
+    #                    dropout=.2, recurrent_dropout=.2, unroll=True)(pep_branch)
+    # pep_branch = Flatten()(pep_in)
+    # pep_branch = Dense(128, kernel_initializer="he_normal")(pep_branch)
     # pep_branch = BatchNormalization()(pep_branch)
     # pep_branch = PReLU()(pep_branch)
     # pep_branch = Dropout(.3)(pep_branch)
+    
+    pep_branch = GlobalAveragePooling1D()(pep_branch)
     
     pep_branch = Dense(1)(pep_branch)
     pred = PReLU()(pep_branch)
 
     model = Model(pep_in, pred)
     model.compile(loss='mse', optimizer="nadam")
-    
-    with open(dir_name + "model.json", "w") as outf:
-        outf.write(model.to_json())
         
     return model
 
 which_model, which_batch = sys.argv[1].split("_")
 make_model = make_model_cnn
-# if which_model == "lstm":
-#     print("lstm")
-#     make_model = make_model_lstm
-# elif which_model == "gru":
-#     print("gru")
-#     make_model = make_model_gru
-# elif which_model == "gru2":
-#     print("gru2")
-#     make_model = make_model_gru2
-# elif which_model == "gruCross":
-#     print("gruCross")
-#     make_model = make_model_gruCross
-# elif which_model == "bigru":
-#     print("bigru")
-#     make_model = make_model_bigru
-# elif which_model == "dense":
-#     print("dense")
-#     make_model = make_model_dense
-# elif which_model == "cnn":
-#     print("cnn")
-#     make_model = make_model_cnn
-# elif which_model == "cnn2":
-#     print("cnn2")
-#     make_model = make_model_cnn2
-# elif which_model == "cnn3":
-#     print("cnn3")
-#     make_model = make_model_cnn3
-# elif which_model == "cnnrnn":
-#     print("cnnrnn")
-#     make_model = make_model_cnnrnn
-# elif which_model == "cnnrnn2":
-#     print("cnnrnn2")
-#     make_model = make_model_cnnrnn2
-# else:
-#     print("unknown keyword model")
-#     sys.exit()
-
 
 dir_name = "models_local/" + sys.argv[1] + "/"
 model_list = {}
@@ -289,8 +269,10 @@ else:
     
 print("Building models...")
 for ps_i, ps in enumerate(ps_uniq):
-    print(ps_i, "/", len(ps_uniq) + 1, " - ", ps)
+    # print(ps_i, "/", len(ps_uniq) + 1, " - ", ps)
+    print(".", end="")
     model_list[ps] = make_model(dir_name)
+print()
 
 
 # print(model.summary())
@@ -299,23 +281,6 @@ for ps_i, ps in enumerate(ps_uniq):
 ###################
 # Train the model #
 ###################
-# generate_batch = generate_batch_imba
-# if which_batch == "imba":
-#     print("imba")
-#     generate_batch = generate_batch_imba
-# elif which_batch == "bal":
-#     print("bal")
-#     generate_batch = generate_batch_balanced
-# elif which_batch == "rand":
-#     print("rand")
-#     generate_batch = generate_batch_random
-# elif which_batch == "wei":
-#     print("wei")
-#     generate_batch = generate_batch_weighted
-# else:
-#     print("unknown keyword batch")
-#     sys.exit()
-
 def generate_batch(X, y, batch_size, indices_strong, indices_weak):
     while True:
         to_sample_strong = batch_size // 2
@@ -327,26 +292,46 @@ def generate_batch(X, y, batch_size, indices_strong, indices_weak):
             
 
 print("Training...")
-EPOCHS=30
+EPOCHS=200
 for epoch in range(1, EPOCHS+1):
+    print("Epoch:", epoch)
     y_pred = np.zeros(y_test.shape)
     
     for ps_i, ps in enumerate(ps_uniq):
-        print(rev_mhc_map[ps])
-        if ps not in indices_strong.keys():
-            print("skip")
-            continue
+        print(ps_i, "/", len(ps_uniq), end="\t")
+        print(rev_mhc_map[ps], end = "\t")
+        print(indices_strong[ps].shape[0], "+", indices_weak[ps].shape[0], " ", indices_test[ps].shape[0], end="\t", sep="")
         model_list[ps].fit_generator(generate_batch(X_pep_train, y_train, BATCH_SIZE, indices_strong[ps], indices_weak[ps]), 
-                                           steps_per_epoch = int(X_pep_train.shape[0] / BATCH_SIZE),
-                                           epochs=epoch, verbose=VERBOSE,
-                                           initial_epoch=epoch-1, callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
+                                     steps_per_epoch=500,
+                                     epochs=epoch, verbose=VERBOSE,
+                                     initial_epoch=epoch-1)
+                                     #callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
         
-        y_pred[indices_strong[ps]] = model_list[ps].predict(X_pep_train[indices_strong[ps]])
-        y_pred[indices_weak[ps]]   = model_list[ps].predict(X_pep_train[indices_weak[ps]])
+        y2_pred = model_list[ps].predict(X_pep_test[indices_test[ps]])
+        y2_test = y_test[indices_test[ps]]
+        y_pred[indices_test[ps]] = y2_pred
+        
+        y2_true_clf = np.zeros(y2_test.shape)
+        y2_true_clf[np.array(y2_test >= BIND_THR)] = 1
+
+        y2_pred_clf = np.zeros(y2_pred.shape)
+        y2_pred_clf[np.array(y2_pred >= BIND_THR)] = 1
+
+        print("F1:", f1_score(y2_true_clf, y2_pred_clf))
+        
+        with open(dir_name + "history.f1." + ",".join(rev_mhc_map[ps]) + ".txt", "a" if epoch > 1 else "w") as hist_file:
+            hist_file.writelines(str(f1_score(y2_true_clf, y2_pred_clf)) + "\n")
+
+        y2_pred_tr = model_list[ps].predict(X_pep_train[indices_train[ps]])
+        
+        with open(dir_name + "pred_tr.txt", "wb") as pred_file:
+            np.savetxt(pred_file, y2_pred_tr)
+        with open(dir_name + "pred.txt", "wb") as pred_file:
+            np.savetxt(pred_file, y2_pred)
     
-    # for key in history.history.keys():
-    #     with open(dir_name + "history." + key + ".txt", "a" if epoch > 1 else "w") as hist_file:
-    #         hist_file.writelines("\n".join(map(str, history.history[key])) + "\n")
+    #
+    # =========================
+    #
     
     y_true_clf = np.zeros(y_test.shape)
     y_true_clf[np.array(y_test >= BIND_THR)] = 1
