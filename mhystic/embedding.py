@@ -45,6 +45,14 @@ def seq2protvec(model, pept):
 
     return res.flatten()
 
+def get_w2vecs(seq, w2v_proteins):
+    w2vecs = seq.apply(partial(seq2vec, w2v_proteins))
+    w2vecs = list(w2vecs)
+    return w2vecs
+
+def meas2binary(meases):
+    return pd.Series(map(lambda x: 1 if x >= log_meas(500) else 0, meases))
+
 def iterate_uniprot_labeled_ngrams(input_data, n=3):
     """
     Create n-gram sequence generator from the primary structure in
