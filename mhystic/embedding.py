@@ -120,15 +120,16 @@ def get_proteins_for_embedding(data_path, func):
         list_of_sequences.append((str(seq_record.seq)))
     return pd.Series(list_of_sequences).apply(func)
 
-def weight_embedding(embedding):
-    return embedding/len(embedding)
+def weight_embedding(embedding, len_seq):
+    return embedding/len_seq
 
-def get_normed(data):
+def get_normed(data, seq_len):
 
     """
-    b = np.array(5*[[12, 34, 45, 23, 34, 54, 56]])
+    len_pept = 9
+    len_mhc = 200
+    b = np.array(5*[[12, 34, 45, 23, 34, 54, 56, 45, 12]])
 
-    weighted = get_normed(b)
+    weighted = get_normed(b, len_pept)
     """
-    return np.apply_along_axis(weight_embedding, 0, data)
-
+    return np.apply_along_axis(weight_embedding, 0, data, seq_len)
