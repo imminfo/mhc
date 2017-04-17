@@ -70,8 +70,8 @@ def iterate_uniprot_labeled_ngrams(input_data, n=3):
                  if len(sequence[i + it:i + n + it]) == n])
         yield TaggedDocument(words=ngrams, tags=[seq_record.id])
 
-def train_seq2vec(data, func=fill_spaces, epochs=5, min_word_count = 10, num_workers = 15,
-                  context = 9, downsampling = 1e-3, w2v_dim = 20):
+def train_seq2vec(data, func=fill_spaces, epochs=1, min_word_count = 5, num_workers = 3,
+                  context = 9, downsampling = 0, w2v_dim = 20):
     """Train the Word2Vec model on the protein primary structures data in the FASTA format.
     :param data_path: str path to the data
     :param epochs: int
@@ -82,12 +82,12 @@ def train_seq2vec(data, func=fill_spaces, epochs=5, min_word_count = 10, num_wor
     :param ngram_size: int
     """
     if(isinstance(data, str)):
-        sequences_for_w2v = get_proteins_for_embedding(data, func)
+        sequences = get_proteins_for_embedding(data, func)
     else:
         sequences = data
 
     print("Training model...")
-    w2v_model = word2vec.Word2Vec(sequences_for_w2v, workers=num_workers, size = w2v_dim,
+    w2v_model = word2vec.Word2Vec(sequences, workers=num_workers, size = w2v_dim,
                               min_count = min_word_count, window = context, sample = downsampling)
 
     print("Done.")
