@@ -34,3 +34,4 @@ for i in [10, 20, 50, 80]:
     w2v_model_dim = get_w2v_model("./data/uniprot.fasta", i)
     print("\n" + 30*"=" + "\n"+ "TRAINING W2V FOR SIZE {} DONE\n".format(i)+30*"="+"\n")
     w2v_model_dim.save("./w2v_models/up9mers_size_{}.pkl".format(i))
+
