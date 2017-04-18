@@ -14,12 +14,12 @@ def get_9mers(seqs):
     for cur_seq in seqs:
         cur_len = len(cur_seq) - len(cur_seq)%9
         for i in range(0, cur_len, 9):
-            if "X" in cur_seq[i:i+9]:
+            if re.search('[X|Z|B|O|U]', cur_seq[i:i+9]) != None:
+                print("FOUND", cur_seq[i:i+9])
                 continue
             mers9.append(cur_seq[i:i+9])
-    return pd.Series(mers9).apply(fill_spaces)
+    return list(pd.Series(mers9).apply(fill_spaces))
 
-a = 0
 big_sequence = []
 for seq_record in SeqIO.parse("./data/uniprot.fasta", "fasta"):
     big_sequence.append(str(seq_record.seq))

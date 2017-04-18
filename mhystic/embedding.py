@@ -19,7 +19,7 @@ def fill_spaces(seq):
 
    seq - peptide sequence
    """
-   return seq.replace("", " ")[1: -1]
+   return seq.replace("", " ")[1: -1].split()
 
 def seq2vec(model, seq):
     """Performs embedding for peptide and return its vector representation
