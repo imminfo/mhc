@@ -2,6 +2,7 @@ import numpy as np
 from mhystic.embedding import *
 import logging
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
+import re
 
 if "uniprot.fasta" in os.listdir("./data/"):
     pass
@@ -13,16 +14,16 @@ def get_9mers(seqs):
     mers9 = []
     for cur_seq in seqs:
         cur_len = len(cur_seq) - len(cur_seq)%9
-        for i in range(0, cur_len, 9):
-            if re.search('[X|Z|B|O|U]', cur_seq[i:i+9]) != None:
-                print("FOUND", cur_seq[i:i+9])
+        for i in range(0, cur_len):
+            if re.search('[X|Z|B|O|U]', cur_seq[i:i+9]):
+                # print("FOUND", cur_seq[i:i+9])
                 continue
             mers9.append(cur_seq[i:i+9])
     return list(pd.Series(mers9).apply(fill_spaces))
 
-big_sequence = []
-for seq_record in SeqIO.parse("./data/uniprot.fasta", "fasta"):
-    big_sequence.append(str(seq_record.seq))
+big_sequence = [str(seq_record.seq) for seq_record in SeqIO.parse("./data/uniprot.fasta", "fasta")]
+# for seq_record in SeqIO.parse("./data/uniprot.fasta", "fasta"):
+#     big_sequence.append(str(seq_record.seq))
 
 w2v_sequences = get_9mers(big_sequence)
 # print(w2v_sequences)
