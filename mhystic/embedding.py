@@ -71,7 +71,7 @@ def iterate_uniprot_labeled_ngrams(input_data, n=3):
         yield TaggedDocument(words=ngrams, tags=[seq_record.id])
 
 def train_seq2vec(data, func=fill_spaces, epochs=1, min_word_count = 5, num_workers = 3,
-                  context = 9, downsampling = 0, w2v_dim = 20):
+                  context = 3, downsampling = 0, w2v_dim = 20):
     """Train the Word2Vec model on the protein primary structures data in the FASTA format.
     :param data_path: str path to the data
     :param epochs: int

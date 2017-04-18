@@ -236,7 +236,7 @@ def make_model_cnn3(dir_name):
     def _block(prev_layer, shape, mid_filters=128):
         branch = BatchNormalization()(prev_layer)
         branch = PReLU()(branch)
-        branch = Dropout(.5)(branch)
+        branch = Dropout(.3)(branch)
         
         branch = Conv1D(mid_filters, 1, kernel_initializer="he_normal")(branch)
         branch = BatchNormalization()(branch)

@@ -22,19 +22,17 @@ def get_9mers(seqs):
 a = 0
 big_sequence = []
 for seq_record in SeqIO.parse("./data/uniprot.fasta", "fasta"):
-    a+=1
-    if a == 5:
-        break
     big_sequence.append(str(seq_record.seq))
 
 w2v_sequences = get_9mers(big_sequence)
+# print(w2v_sequences)
 
 if "9mers.npy" in os.listdir("./data/"):
     pass
 else:
     np.save("./data/9mers.npy", np.array(w2v_sequences))
 
-for i in [10, 50, 80]:
-    w2v_model = train_seq2vec(w2v_sequences, w2v_dim=i)
+for i in [10, 20, 50, 80]:
+    w2v_model = train_seq2vec(w2v_sequences, w2v_dim=i, num_workers=60)
     print("\n" + 30*"=" + "\n"+ "TRAINING W2V FOR SIZE {} DONE\n".format(i)+30*"="+"\n")
-    w2v_model.save("./w2v_models/up9mers_size_{}.pkl".format(i))
+    w2v_model.save("./w2v_models/up9mers_size_{}_window_3.pkl".format(i))
