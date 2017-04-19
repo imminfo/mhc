@@ -14,6 +14,7 @@ from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 import shutil
 import numpy as np
 from numpy.random import randint
+from numpy.linalg import norm
 import random
 import sys
 import re
@@ -29,6 +30,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pylab
 import os
+import gensim
 
 from mhcmodel import *
 from batch_generator import *
@@ -79,53 +81,30 @@ def read_df(filepath):
     df = df.loc[df.mhc != "HLAB60", :]
     
     return df
-    
-    
-def pv_vec(seq, protvec):
-    res = np.zeros((100, len(seq) - 2), dtype=float)
-    for i in range(len(seq) - 2):
-        res[:, i] = protvec[seq[i:i+3]]
-    return res
 
 
-def pv_sum(seq, protvec):
-    res = np.zeros((100,), dtype=float)
-    for i in range(len(seq) - 2):
-        res += protvec[seq[i:i+3]]
-    return res
-
+w2v_model = gensim.models.Word2Vec.load("w2v_models/up9mers_size_10_window_3.pkl")
 
 def vectorize_mhc(seq_vec, name_vec, max_len, chars):
     res = {}
     for i, seq in enumerate(seq_vec):
-        res[name_vec[i]] = np.zeros((max_len, len(chars)), dtype=np.bool)
+        # res[name_vec[i]] = np.zeros((max_len, len(chars)), dtype=np.bool)
+        res[name_vec[i]] = np.zeros((max_len, 10), dtype=np.float32)
         for row, char in enumerate(seq):
-            res[name_vec[i]][row, char_indices[char]] = 1
+            # res[name_vec[i]][row, char_indices[char]] = 1
+            res[name_vec[i]][row, :] = w2v_model.wv[char] / norm(w2v_model.wv[char])
     return res
 
 
 def vectorize_xy(seq_vec, affin_vec, max_len, chars):
-    X = np.zeros((len(seq_vec), max_len, len(chars)), dtype=np.bool)
+    # X = np.zeros((len(seq_vec), max_len, len(chars)), dtype=np.bool)
+    X = np.zeros((len(seq_vec), max_len, 10), dtype=np.float32)
     y = affin_vec
     for i, seq in enumerate(seq_vec):
         for row, char in enumerate(seq):
-            X[i, row, char_indices[char]] = 1
+            # X[i, row, char_indices[char]] = 1
+            X[i, row, :] = w2v_model.wv[char] / norm(w2v_model.wv[char])
     return X, y.reshape(len(seq_vec), 1)
-
-
-
-#########################
-# Load the ProtVec data #
-#########################
-"""
-protvec_df = pd.read_table("data/protvec.csv", sep = "\\t", header=None)
-protvec = {}
-for ind, row in protvec_df.iterrows():
-    row = list(row)
-    row[0] = row[0][1:]
-    row[-1] = row[-1][:-1]
-    protvec[row[0]] = np.array(row[1:], dtype=float)
-"""
 
     
 #####################
@@ -158,7 +137,8 @@ human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 MAX_PEP_LEN = max([len(x) for x in human_df["sequence"]])
 X_pep_train, y_train = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
-X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
+# X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
+X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, 10), dtype=np.float32)
 for i, mhc in enumerate(human_df["mhc"]):
     X_mhc_train[i,:,:] = X_mhc[mhc]
 print(X_pep_train.shape)
@@ -172,7 +152,8 @@ print(indices_weak.shape)
 assert(indices_strong.shape[0] + indices_weak.shape[0] == X_pep_train.shape[0])
 
 _, mhc_unique_indices = np.unique(mhc_df["pseudo"], return_index=True)
-X_mhc_unique = np.zeros((mhc_unique_indices.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
+# X_mhc_unique = np.zeros((mhc_unique_indices.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
+X_mhc_unique = np.zeros((mhc_unique_indices.shape[0], MAX_MHC_LEN, 10), dtype=np.float32)
 for i, j in enumerate(mhc_unique_indices):
     X_mhc_unique[i,:,:] = X_mhc[mhc_df["mhc"].loc[j]]
     
@@ -188,7 +169,8 @@ human_df = df.loc[df.species == "human", :]
 human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 X_pep_test, y_test = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
-X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
+# X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
+X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, 10), dtype=np.float32)
 for i, mhc in enumerate(human_df["mhc"]):
     X_mhc_test[i,:,:] = X_mhc[mhc]
 print(X_pep_test.shape)
@@ -301,13 +283,15 @@ else:
 
 
 print("Training...")
+reduce_lr = ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=2, cooldown=1, min_lr=0.0005)
 for epoch in range(1, EPOCHS+1):
     history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE, indices_strong, indices_weak), 
+                                  validation_data = ([X_mhc_test, X_pep_test], y_test),
                                   steps_per_epoch = int(X_mhc_train.shape[0] / BATCH_SIZE),
                                   epochs=epoch, 
                                   verbose=VERBOSE,
                                   initial_epoch=epoch-1, 
-                                  callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
+                                  callbacks=[reduce_lr, ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
     
     # history = model.fit([X_mhc_train, X_pep_train], y_train, 
     #                               batch_size=BATCH_SIZE,

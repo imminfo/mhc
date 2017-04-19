@@ -247,11 +247,14 @@ def make_model_cnn3(dir_name):
         branch = Conv1D(shape[1], 1, kernel_initializer="he_normal")(branch)
         return add([prev_layer, branch])
     
-    mhc_in = Input(shape=(48,20))
-    mhc_branch = _block(mhc_in, (48,20))
+    char_dim = 10
+    mhc_in = Input(shape=(48,char_dim))
+    mhc_branch = _block(mhc_in, (48,char_dim))
+    mhc_branch = _block(mhc_branch, (48,char_dim))
     
-    pep_in = Input(shape=(9,20))
-    pep_branch = _block(pep_in, (9,20))
+    pep_in = Input(shape=(9,char_dim))
+    pep_branch = _block(pep_in, (9,char_dim))
+    pep_branch = _block(pep_branch, (9,char_dim))
     
     mhc_branch = Flatten()(mhc_branch)
     pep_branch = Flatten()(pep_branch)
@@ -262,10 +265,10 @@ def make_model_cnn3(dir_name):
     merged = PReLU()(merged)
     merged = Dropout(.3)(merged)
     
-    merged = Dense(64, kernel_initializer="he_normal")(merged)
-    merged = BatchNormalization()(merged)
-    merged = PReLU()(merged)
-    merged = Dropout(.3)(merged)
+    # merged = Dense(64, kernel_initializer="he_normal")(merged)
+    # merged = BatchNormalization()(merged)
+    # merged = PReLU()(merged)
+    # merged = Dropout(.3)(merged)
     
     merged = Dense(1)(merged)
     pred = PReLU()(merged)
