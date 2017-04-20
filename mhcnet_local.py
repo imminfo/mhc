@@ -79,7 +79,7 @@ def read_df(filepath):
 
     df = df.loc[df.mhc != "HLAB60", :]
     
-    # df = df.ix[df["mhc"] == "HLAB4601", :]
+    df = df.ix[df["mhc"] == "HLAB4601", :]
     #HLAB4601
     
     return df
