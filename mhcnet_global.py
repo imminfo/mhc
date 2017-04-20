@@ -10,7 +10,7 @@ from keras.layers.embeddings import Embedding
 from keras.layers.merge import concatenate
 from keras.layers.advanced_activations import PReLU
 from keras.utils.data_utils import get_file
-from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
+from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, CSVLogger
 import shutil
 import numpy as np
 from numpy.random import randint
@@ -61,35 +61,52 @@ def read_df(filepath):
     df.mhc = list(map(lambda x: x.replace(":", ""), df.mhc))
     df.mhc = list(map(lambda x: x.replace("*", ""), df.mhc))
 
-    df.loc[df.mhc == "HLAA1", "mhc"] = "HLAA0101"
-    df.loc[df.mhc == "HLAA11", "mhc"] = "HLAA0101"
-    df.loc[df.mhc == "HLAA2", "mhc"] = "HLAA0201"
-    df.loc[df.mhc == "HLAA3", "mhc"] = "HLAA0319"
-    df.loc[df.mhc == "HLAA3/11", "mhc"] = "HLAA0319"
-    df.loc[df.mhc == "HLAA26", "mhc"] = "HLAA2602"
-    df.loc[df.mhc == "HLAA24", "mhc"] = "HLAA2403"
+#     df.loc[df.mhc == "HLAA1", "mhc"] = "HLAA0101"
+#     df.loc[df.mhc == "HLAA11", "mhc"] = "HLAA0101"
+#     df.loc[df.mhc == "HLAA2", "mhc"] = "HLAA0201"
+#     df.loc[df.mhc == "HLAA3", "mhc"] = "HLAA0319"
+#     df.loc[df.mhc == "HLAA3/11", "mhc"] = "HLAA0319"
+#     df.loc[df.mhc == "HLAA26", "mhc"] = "HLAA2602"
+#     df.loc[df.mhc == "HLAA24", "mhc"] = "HLAA2403"
 
-    df.loc[df.mhc == "HLAB44", "mhc"] = "HLAB4402"
-    df.loc[df.mhc == "HLAB51", "mhc"] = "HLAB5101"
-    df.loc[df.mhc == "HLAB7", "mhc"] = "HLAB0702"
-    df.loc[df.mhc == "HLAB27", "mhc"] = "HLAB2720"
-    df.loc[df.mhc == "HLAB8", "mhc"] = "HLAB0801"
+#     df.loc[df.mhc == "HLAB44", "mhc"] = "HLAB4402"
+#     df.loc[df.mhc == "HLAB51", "mhc"] = "HLAB5101"
+#     df.loc[df.mhc == "HLAB7", "mhc"] = "HLAB0702"
+#     df.loc[df.mhc == "HLAB27", "mhc"] = "HLAB2720"
+#     df.loc[df.mhc == "HLAB8", "mhc"] = "HLAB0801"
 
-    df.loc[df.mhc == "HLACw1", "mhc"] = "HLAC0401"
-    df.loc[df.mhc == "HLACw4", "mhc"] = "HLAC0401"
+#     df.loc[df.mhc == "HLACw1", "mhc"] = "HLAC0401"
+#     df.loc[df.mhc == "HLACw4", "mhc"] = "HLAC0401"
+
+    df = df.loc[df.mhc != "HLAA1", :]
+    df = df.loc[df.mhc != "HLAA11", :]
+    df = df.loc[df.mhc != "HLAA2", :]
+    df = df.loc[df.mhc != "HLAA3", :]
+    df = df.loc[df.mhc != "HLAA3/11", :]
+    df = df.loc[df.mhc != "HLAA26", :]
+    df = df.loc[df.mhc != "HLAA24", :]
+
+    df = df.loc[df.mhc != "HLAB44", :]
+    df = df.loc[df.mhc != "HLAB51", :]
+    df = df.loc[df.mhc != "HLAB7", :]
+    df = df.loc[df.mhc != "HLAB27", :]
+    df = df.loc[df.mhc != "HLAB8", :]
+
+    df = df.loc[df.mhc != "HLACw1", :]
+    df = df.loc[df.mhc != "HLACw4", :]
 
     df = df.loc[df.mhc != "HLAB60", :]
     
     return df
 
 
-w2v_model = gensim.models.Word2Vec.load("w2v_models/up9mers_size_10_window_3.pkl")
+w2v_model = gensim.models.Word2Vec.load("w2v_models/up9mers_size_20_window_3.pkl")
 
 def vectorize_mhc(seq_vec, name_vec, max_len, chars):
     res = {}
     for i, seq in enumerate(seq_vec):
         # res[name_vec[i]] = np.zeros((max_len, len(chars)), dtype=np.bool)
-        res[name_vec[i]] = np.zeros((max_len, 10), dtype=np.float32)
+        res[name_vec[i]] = np.zeros((max_len, 20), dtype=np.float32)
         for row, char in enumerate(seq):
             # res[name_vec[i]][row, char_indices[char]] = 1
             res[name_vec[i]][row, :] = w2v_model.wv[char] / norm(w2v_model.wv[char])
@@ -98,7 +115,7 @@ def vectorize_mhc(seq_vec, name_vec, max_len, chars):
 
 def vectorize_xy(seq_vec, affin_vec, max_len, chars):
     # X = np.zeros((len(seq_vec), max_len, len(chars)), dtype=np.bool)
-    X = np.zeros((len(seq_vec), max_len, 10), dtype=np.float32)
+    X = np.zeros((len(seq_vec), max_len, 20), dtype=np.float32)
     y = affin_vec
     for i, seq in enumerate(seq_vec):
         for row, char in enumerate(seq):
@@ -138,7 +155,7 @@ human_df = human_df.loc[human_df.peptide_length == 9, :]
 MAX_PEP_LEN = max([len(x) for x in human_df["sequence"]])
 X_pep_train, y_train = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
 # X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
-X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, 10), dtype=np.float32)
+X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, 20), dtype=np.float32)
 for i, mhc in enumerate(human_df["mhc"]):
     X_mhc_train[i,:,:] = X_mhc[mhc]
 print(X_pep_train.shape)
@@ -153,7 +170,7 @@ assert(indices_strong.shape[0] + indices_weak.shape[0] == X_pep_train.shape[0])
 
 _, mhc_unique_indices = np.unique(mhc_df["pseudo"], return_index=True)
 # X_mhc_unique = np.zeros((mhc_unique_indices.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
-X_mhc_unique = np.zeros((mhc_unique_indices.shape[0], MAX_MHC_LEN, 10), dtype=np.float32)
+X_mhc_unique = np.zeros((mhc_unique_indices.shape[0], MAX_MHC_LEN, 20), dtype=np.float32)
 for i, j in enumerate(mhc_unique_indices):
     X_mhc_unique[i,:,:] = X_mhc[mhc_df["mhc"].loc[j]]
     
@@ -170,7 +187,7 @@ human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 X_pep_test, y_test = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
 # X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
-X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, 10), dtype=np.float32)
+X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, 20), dtype=np.float32)
 for i, mhc in enumerate(human_df["mhc"]):
     X_mhc_test[i,:,:] = X_mhc[mhc]
 print(X_pep_test.shape)
@@ -291,7 +308,7 @@ for epoch in range(1, EPOCHS+1):
                                   epochs=epoch, 
                                   verbose=VERBOSE,
                                   initial_epoch=epoch-1, 
-                                  callbacks=[reduce_lr, ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
+                                  callbacks=[reduce_lr, CSVLogger(dir_name + "/" + "log.txt", append = True if epoch > 1 else False), ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
     
     # history = model.fit([X_mhc_train, X_pep_train], y_train, 
     #                               batch_size=BATCH_SIZE,
@@ -303,7 +320,23 @@ for epoch in range(1, EPOCHS+1):
     for key in history.history.keys():
         with open(dir_name + "history." + key + ".txt", "a" if epoch > 1 else "w") as hist_file:
             hist_file.writelines("\n".join(map(str, history.history[key])) + "\n")
-          
+            
+            
+    ########## Train
+    y_pred = model.predict([X_mhc_train, X_pep_train])
+    
+    y_true_clf = np.zeros(y_train.shape)
+    y_true_clf[np.array(y_train >= BIND_THR)] = 1
+
+    y_pred_clf = np.zeros(y_pred.shape)
+    y_pred_clf[np.array(y_pred >= BIND_THR)] = 1
+    
+    print("[train] F1:", f1_score(y_true_clf, y_pred_clf))
+    print("[train] AUC:", roc_auc_score(y_true_clf, y_pred_clf))
+    print(confusion_matrix(y_true_clf, y_pred_clf))
+    print()
+    
+    ########## Test
     y_pred = model.predict([X_mhc_test, X_pep_test])
     
     y_true_clf = np.zeros(y_test.shape)
@@ -312,11 +345,12 @@ for epoch in range(1, EPOCHS+1):
     y_pred_clf = np.zeros(y_pred.shape)
     y_pred_clf[np.array(y_pred >= BIND_THR)] = 1
     
-    print("F1:", f1_score(y_true_clf, y_pred_clf))
-    print("AUC:", roc_auc_score(y_true_clf, y_pred_clf))
+    print("[test] F1:", f1_score(y_true_clf, y_pred_clf))
+    print("[test] AUC:", roc_auc_score(y_true_clf, y_pred_clf))
     print(confusion_matrix(y_true_clf, y_pred_clf))
     print()
     
+    ########## Output
     with open(dir_name + "history.f1.txt", "a" if epoch > 1 else "w") as hist_file:
         hist_file.writelines(str(f1_score(y_true_clf, y_pred_clf)) + "\n")
     with open(dir_name + "history.auc.txt", "a" if epoch > 1 else "w") as hist_file:

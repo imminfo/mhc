@@ -9,6 +9,7 @@ from keras.layers.normalization import BatchNormalization
 from keras.layers.embeddings import Embedding
 from keras.layers.merge import concatenate
 from keras.layers.advanced_activations import PReLU
+from keras.optimizers import Nadam
 from keras.utils.data_utils import get_file
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 import pandas as pd
@@ -247,7 +248,7 @@ def make_model_cnn3(dir_name):
         branch = Conv1D(shape[1], 1, kernel_initializer="he_normal")(branch)
         return add([prev_layer, branch])
     
-    char_dim = 10
+    char_dim = 20
     mhc_in = Input(shape=(48,char_dim))
     mhc_branch = _block(mhc_in, (48,char_dim))
     mhc_branch = _block(mhc_branch, (48,char_dim))
@@ -263,17 +264,23 @@ def make_model_cnn3(dir_name):
     merged = Dense(64, kernel_initializer="he_normal")(merged)
     merged = BatchNormalization()(merged)
     merged = PReLU()(merged)
-    merged = Dropout(.3)(merged)
+    merged = Dropout(.5)(merged)
     
-    # merged = Dense(64, kernel_initializer="he_normal")(merged)
-    # merged = BatchNormalization()(merged)
-    # merged = PReLU()(merged)
-    # merged = Dropout(.3)(merged)
+    merged = Dense(64, kernel_initializer="he_normal")(merged)
+    merged = BatchNormalization()(merged)
+    merged = PReLU()(merged)
+    merged = Dropout(.5)(merged)
+    
+    merged = Dense(64, kernel_initializer="he_normal")(merged)
+    merged = BatchNormalization()(merged)
+    merged = PReLU()(merged)
+    merged = Dropout(.5)(merged)
     
     merged = Dense(1)(merged)
     pred = PReLU()(merged)
 
     model = Model([mhc_in, pep_in], pred)
+    # model.compile(loss='mse', optimizer=Nadam(lr=0.0003))
     model.compile(loss='mse', optimizer="nadam")
     
     with open(dir_name + "model.json", "w") as outf:
