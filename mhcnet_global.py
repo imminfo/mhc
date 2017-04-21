@@ -10,7 +10,7 @@ from keras.layers.embeddings import Embedding
 from keras.layers.merge import concatenate
 from keras.layers.advanced_activations import PReLU
 from keras.utils.data_utils import get_file
-from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, CSVLogger
+from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, CSVLogger, LearningRateScheduler
 import shutil
 import numpy as np
 from numpy.random import randint
@@ -100,13 +100,13 @@ def read_df(filepath):
     return df
 
 
-w2v_model = gensim.models.Word2Vec.load("w2v_models/up9mers_size_20_window_3.pkl")
+w2v_model = gensim.models.Word2Vec.load("w2v_models/up9mers_size_50_window_3.pkl")
 
 def vectorize_mhc(seq_vec, name_vec, max_len, chars):
     res = {}
     for i, seq in enumerate(seq_vec):
         # res[name_vec[i]] = np.zeros((max_len, len(chars)), dtype=np.bool)
-        res[name_vec[i]] = np.zeros((max_len, 20), dtype=np.float32)
+        res[name_vec[i]] = np.zeros((max_len, 50), dtype=np.float32)
         for row, char in enumerate(seq):
             # res[name_vec[i]][row, char_indices[char]] = 1
             res[name_vec[i]][row, :] = w2v_model.wv[char] / norm(w2v_model.wv[char])
@@ -115,7 +115,7 @@ def vectorize_mhc(seq_vec, name_vec, max_len, chars):
 
 def vectorize_xy(seq_vec, affin_vec, max_len, chars):
     # X = np.zeros((len(seq_vec), max_len, len(chars)), dtype=np.bool)
-    X = np.zeros((len(seq_vec), max_len, 20), dtype=np.float32)
+    X = np.zeros((len(seq_vec), max_len, 50), dtype=np.float32)
     y = affin_vec
     for i, seq in enumerate(seq_vec):
         for row, char in enumerate(seq):
@@ -155,7 +155,7 @@ human_df = human_df.loc[human_df.peptide_length == 9, :]
 MAX_PEP_LEN = max([len(x) for x in human_df["sequence"]])
 X_pep_train, y_train = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
 # X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
-X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, 20), dtype=np.float32)
+X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, 50), dtype=np.float32)
 for i, mhc in enumerate(human_df["mhc"]):
     X_mhc_train[i,:,:] = X_mhc[mhc]
 print(X_pep_train.shape)
@@ -170,7 +170,7 @@ assert(indices_strong.shape[0] + indices_weak.shape[0] == X_pep_train.shape[0])
 
 _, mhc_unique_indices = np.unique(mhc_df["pseudo"], return_index=True)
 # X_mhc_unique = np.zeros((mhc_unique_indices.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
-X_mhc_unique = np.zeros((mhc_unique_indices.shape[0], MAX_MHC_LEN, 20), dtype=np.float32)
+X_mhc_unique = np.zeros((mhc_unique_indices.shape[0], MAX_MHC_LEN, 50), dtype=np.float32)
 for i, j in enumerate(mhc_unique_indices):
     X_mhc_unique[i,:,:] = X_mhc[mhc_df["mhc"].loc[j]]
     
@@ -187,7 +187,7 @@ human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 X_pep_test, y_test = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
 # X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
-X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, 20), dtype=np.float32)
+X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, 50), dtype=np.float32)
 for i, mhc in enumerate(human_df["mhc"]):
     X_mhc_test[i,:,:] = X_mhc[mhc]
 print(X_pep_test.shape)
@@ -299,16 +299,20 @@ else:
     sys.exit()
 
 
+reduce_lr = ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=3, cooldown=1, min_lr=0.000005)
+def scheduler(epoch):
+    return 0.002 * (.2 ** (epoch // 20))
+lr_sch = LearningRateScheduler(scheduler)
+
 print("Training...")
-reduce_lr = ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=2, cooldown=1, min_lr=0.0005)
 for epoch in range(1, EPOCHS+1):
-    history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE, indices_strong, indices_weak), 
-                                  validation_data = ([X_mhc_test, X_pep_test], y_test),
+    history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE, indices_strong, indices_weak, weights_train), 
+                                  validation_data = ([X_mhc_test, X_pep_test], y_test, weights_test.reshape((-1,))),
                                   steps_per_epoch = int(X_mhc_train.shape[0] / BATCH_SIZE),
                                   epochs=epoch, 
                                   verbose=VERBOSE,
                                   initial_epoch=epoch-1, 
-                                  callbacks=[reduce_lr, CSVLogger(dir_name + "/" + "log.txt", append = True if epoch > 1 else False), ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
+                                  callbacks=[reduce_lr, lr_sch, CSVLogger(dir_name + "/" + "log.txt", append = True if epoch > 1 else False), ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
     
     # history = model.fit([X_mhc_train, X_pep_train], y_train, 
     #                               batch_size=BATCH_SIZE,

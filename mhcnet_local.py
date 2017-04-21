@@ -1,4 +1,5 @@
 from __future__ import print_function, division
+
 from keras.models import Model, load_model
 from keras.layers import Dense, Activation, Dropout
 from keras.layers import LSTM, GRU, Bidirectional, Input, Conv1D, average
@@ -11,7 +12,7 @@ from keras.layers.embeddings import Embedding
 from keras.layers.merge import concatenate
 from keras.layers.advanced_activations import PReLU
 from keras.utils.data_utils import get_file
-from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
+from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, LearningRateScheduler
 import shutil
 import numpy as np
 from numpy.random import randint
@@ -41,7 +42,7 @@ sys.setrecursionlimit(10000)
 BIND_THR = 1 - np.log(500) / np.log(50000)
 
 
-VERBOSE=0
+VERBOSE=2
 BATCH_SIZE=16
 EPOCHS=300
 POOL_SIZE=2
@@ -79,8 +80,11 @@ def read_df(filepath):
 
     df = df.loc[df.mhc != "HLAB60", :]
     
-    df = df.ix[df["mhc"] == "HLAB4601", :]
+    # df = df.ix[(df["mhc"] == "HLAA0101") | (df["mhc"] == "HLAA0201"), :]
+    # df = df.ix[df["mhc"] == "HLAA0101", :]
+    # df.reset_index(inplace=True, drop=True)
     #HLAB4601
+    #HLAA8001
     
     return df
 
@@ -156,7 +160,8 @@ for i, ps in enumerate(ps_uniq):
     tmp1 = np.nonzero(np.array(y_train >= BIND_THR) & (ps_arr == ps))[0]
     tmp2 = np.nonzero(np.array(y_train < BIND_THR) & (ps_arr == ps))[0]
     tmp3 = np.nonzero(ps_arr == ps)[0]
-    if (tmp1.shape[0] >= 20) and (tmp2.shape[0] >= 20):
+    # if (tmp1.shape[0] >= 20) and (tmp2.shape[0] >= 20):
+    if tmp1.shape[0] + tmp2.shape[0] >= 500:
         indices_strong[ps] = tmp1
         indices_weak[ps]   = tmp2
         indices_train[ps]  = tmp3
@@ -207,34 +212,38 @@ weights_test = np.exp(stats.beta.pdf(y_test, a=3.75, b=5))
 # Build the model #
 ###################
 def make_model_cnn(dir_name):
-    def _block(prev_layer, shape, mid_filters=128):
+    def _block(prev_layer, shape, mid_filters):
         branch = BatchNormalization()(prev_layer)
         branch = PReLU()(branch)
+        branch = Conv1D(mid_filters[0], 1, kernel_initializer="he_normal")(branch)
         branch = Dropout(.5)(branch)
         
-        branch = Conv1D(mid_filters, 1, kernel_initializer="he_normal")(branch)
         branch = BatchNormalization()(branch)
         branch = PReLU()(branch)
+        branch = Conv1D(mid_filters[1], 1, kernel_initializer="he_normal")(branch)
+        branch = Dropout(.5)(branch)
         
+        branch = BatchNormalization()(branch)
+        branch = PReLU()(branch)
         branch = Conv1D(shape[1], 1, kernel_initializer="he_normal")(branch)
         return add([prev_layer, branch])
     
     pep_in = Input(shape=(9,20))
-    pep_branch = _block(pep_in, (9,20), 128)
-    pep_branch = _block(pep_in, (9,20), 256)
-    pep_branch = _block(pep_in, (9,20), 512)
-    pep_branch = _block(pep_in, (9,20), 512)
+    pep_branch = _block(pep_in, (9,20), [192, 192])
+    # pep_branch = _block(pep_in, (9,20), 256)
+    # pep_branch = _block(pep_in, (9,20), 512)
+    # pep_branch = _block(pep_in, (9,20), 512)
     
     # pep_branch = GRU(32, kernel_initializer="he_normal", recurrent_initializer="he_normal", 
     #                    implementation=2, bias_initializer="he_normal",
     #                    dropout=.2, recurrent_dropout=.2, unroll=True)(pep_branch)
-    # pep_branch = Flatten()(pep_in)
-    # pep_branch = Dense(128, kernel_initializer="he_normal")(pep_branch)
-    # pep_branch = BatchNormalization()(pep_branch)
-    # pep_branch = PReLU()(pep_branch)
-    # pep_branch = Dropout(.3)(pep_branch)
+    pep_branch = Flatten()(pep_in)
+    pep_branch = Dense(64, kernel_initializer="he_normal")(pep_branch)
+    pep_branch = BatchNormalization()(pep_branch)
+    pep_branch = PReLU()(pep_branch)
+    pep_branch = Dropout(.7)(pep_branch)
     
-    pep_branch = GlobalAveragePooling1D()(pep_branch)
+    # pep_branch = GlobalAveragePooling1D()(pep_branch)
     
     pep_branch = Dense(1)(pep_branch)
     pred = PReLU()(pep_branch)
@@ -291,22 +300,42 @@ def generate_batch(X, y, batch_size, indices_strong, indices_weak):
               np.vstack([y[sampled_indices_strong], y[sampled_indices_weak]])
             
 
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, cooldown=1, min_lr=0.00005)
+
+def scheduler(epoch):
+    return 0.002 * (.3 ** (epoch // 20))
+lr_sch = LearningRateScheduler(scheduler)
+
 print("Training...")
-EPOCHS=200
 for epoch in range(1, EPOCHS+1):
     print("Epoch:", epoch)
     y_pred = np.zeros(y_test.shape)
     
     for ps_i, ps in enumerate(ps_uniq):
-        print(ps_i, "/", len(ps_uniq), end="\t")
+        print(ps_i+1, "/", len(ps_uniq)+1, end="\t")
         print(rev_mhc_map[ps], end = "\t")
-        print(indices_strong[ps].shape[0], "+", indices_weak[ps].shape[0], " ", indices_test[ps].shape[0], end="\t", sep="")
+        print(indices_strong[ps].shape[0], "+", indices_weak[ps].shape[0], " ", indices_test[ps].shape[0])#, end="\t", sep="")
+        # print(model_list[ps].optimizer.lr.get_value())
         model_list[ps].fit_generator(generate_batch(X_pep_train, y_train, BATCH_SIZE, indices_strong[ps], indices_weak[ps]), 
-                                     steps_per_epoch=500,
-                                     epochs=epoch, verbose=VERBOSE,
-                                     initial_epoch=epoch-1)
+                                     steps_per_epoch=800,
+                                     epochs=epoch, verbose=VERBOSE, validation_data=(X_pep_test[indices_test[ps]], y_test[indices_test[ps]]),
+                                     initial_epoch=epoch-1, callbacks=[reduce_lr, lr_sch])
                                      #callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
         
+        
+        ####
+#         y2_pred = model_list[ps].predict(np.vstack([X_pep_train[indices_strong[ps]], X_pep_train[indices_weak[ps]]]))
+#         y2_test = np.vstack([y_train[indices_strong[ps]], y_train[indices_weak[ps]]])
+        
+#         y2_true_clf = np.zeros(y2_test.shape)
+#         y2_true_clf[np.array(y2_test >= BIND_THR)] = 1
+
+#         y2_pred_clf = np.zeros(y2_pred.shape)
+#         y2_pred_clf[np.array(y2_pred >= BIND_THR)] = 1
+
+#         print("[train] F1:", f1_score(y2_true_clf, y2_pred_clf))
+        
+        ####
         y2_pred = model_list[ps].predict(X_pep_test[indices_test[ps]])
         y2_test = y_test[indices_test[ps]]
         y_pred[indices_test[ps]] = y2_pred
@@ -317,7 +346,7 @@ for epoch in range(1, EPOCHS+1):
         y2_pred_clf = np.zeros(y2_pred.shape)
         y2_pred_clf[np.array(y2_pred >= BIND_THR)] = 1
 
-        print("F1:", f1_score(y2_true_clf, y2_pred_clf))
+        print("[test] F1:", f1_score(y2_true_clf, y2_pred_clf))
         
         with open(dir_name + "history.f1." + ",".join(rev_mhc_map[ps]) + ".txt", "a" if epoch > 1 else "w") as hist_file:
             hist_file.writelines(str(f1_score(y2_true_clf, y2_pred_clf)) + "\n")
@@ -332,6 +361,8 @@ for epoch in range(1, EPOCHS+1):
     #
     # =========================
     #
+    
+    print("\n==============\n")
     
     y_true_clf = np.zeros(y_test.shape)
     y_true_clf[np.array(y_test >= BIND_THR)] = 1
