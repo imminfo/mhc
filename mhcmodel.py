@@ -4,7 +4,7 @@ from keras.layers import Dense, Activation, Dropout
 from keras.layers import LSTM, GRU, Bidirectional, Input, Conv1D, average, add
 from keras.layers.core import Flatten
 from keras.layers.convolutional import Conv1D
-from keras.layers.pooling import MaxPooling1D
+from keras.layers.pooling import MaxPooling1D, GlobalAveragePooling1D
 from keras.layers.normalization import BatchNormalization
 from keras.layers.embeddings import Embedding
 from keras.layers.merge import concatenate
@@ -231,32 +231,39 @@ def make_model_cnn2(dir_name):
 
 def make_model_cnn3(dir_name):
     def _block(prev_layer, shape):
-        branch = BatchNormalization()(prev_layer)
-        branch = PReLU()(branch)
-        branch = Dropout(.3)(branch)
+        shortcut = BatchNormalization()(prev_layer)
+        shortcut = PReLU()(shortcut)
         
-        branch = Conv1D(192, 1, kernel_initializer="he_normal")(branch)
+        branch = Conv1D(64, 1, kernel_initializer="he_normal")(shortcut)
         branch = BatchNormalization()(branch)
         branch = PReLU()(branch)
         branch = Dropout(.3)(branch)
-        
-        branch = Conv1D(128, 1, kernel_initializer="he_normal")(branch)
-        branch = BatchNormalization()(branch)
-        branch = PReLU()(branch)
-        branch = Dropout(.3)(branch)        
         
         branch = Conv1D(shape[1], 1, kernel_initializer="he_normal")(branch)
-        return add([prev_layer, branch])
+        
+        shortcut = Conv1D(shape[1], 1, kernel_initializer="he_normal")(shortcut)
+        return add([shortcut, branch])
     
-    char_dim = 50
-    mhc_in = Input(shape=(48,char_dim))
-    mhc_branch = _block(mhc_in, (48,char_dim))
+    char_dim = 20
     
-    pep_in = Input(shape=(9,char_dim))
-    pep_branch = _block(pep_in, (9,char_dim))
+    mhc_in = Input(shape=(48, char_dim))
+    mhc_branch = _block(mhc_in, (48, char_dim))
+    mhc_branch = _block(mhc_branch, (48, char_dim))
+    mhc_branch = _block(mhc_branch, (48, char_dim))
+    mhc_branch = BatchNormalization()(mhc_branch)
+    mhc_branch = PReLU()(mhc_branch)
+    mhc_branch = GlobalAveragePooling1D()(mhc_branch)
     
-    mhc_branch = Flatten()(mhc_branch)
-    pep_branch = Flatten()(pep_branch)
+    pep_in = Input(shape=(9, char_dim))
+    pep_branch = _block(pep_in, (9, char_dim))
+    pep_branch = _block(pep_branch, (9, char_dim))
+    pep_branch = _block(pep_branch, (9, char_dim))
+    pep_branch = BatchNormalization()(pep_branch)
+    pep_branch = PReLU()(pep_branch)
+    pep_branch = GlobalAveragePooling1D()(pep_branch)
+    
+    # mhc_branch = Flatten()(mhc_branch)
+    # pep_branch = Flatten()(pep_branch)
 
     merged = concatenate([pep_branch, mhc_branch])
     merged = Dense(64, kernel_initializer="he_normal")(merged)
@@ -274,7 +281,7 @@ def make_model_cnn3(dir_name):
 
     model = Model([mhc_in, pep_in], pred)
     # model.compile(loss='mse', optimizer=Nadam(lr=0.0003))
-    model.compile(loss='mse', optimizer="nadam")
+    model.compile(loss='mse', optimizer="adam")
     
     with open(dir_name + "model.json", "w") as outf:
         outf.write(model.to_json())

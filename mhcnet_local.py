@@ -237,7 +237,7 @@ def make_model_cnn(dir_name):
     # pep_branch = GRU(32, kernel_initializer="he_normal", recurrent_initializer="he_normal", 
     #                    implementation=2, bias_initializer="he_normal",
     #                    dropout=.2, recurrent_dropout=.2, unroll=True)(pep_branch)
-    pep_branch = Flatten()(pep_in)
+    pep_branch = Flatten()(pep_branch)
     pep_branch = Dense(64, kernel_initializer="he_normal")(pep_branch)
     pep_branch = BatchNormalization()(pep_branch)
     pep_branch = PReLU()(pep_branch)
@@ -303,7 +303,7 @@ def generate_batch(X, y, batch_size, indices_strong, indices_weak):
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, cooldown=1, min_lr=0.00005)
 
 def scheduler(epoch):
-    return 0.002 * (.3 ** (epoch // 20))
+    return 0.002 * (.1 ** (epoch // 10))
 lr_sch = LearningRateScheduler(scheduler)
 
 print("Training...")

@@ -19,7 +19,7 @@ def log_meas(affinity):
 def meas2binary(meases):
     return pd.Series(map(lambda x: 1 if x >= log_meas(500) else 0, meases))
 
-unify_alleles = lambda x: re.sub('[-|*]', '', x)
+unify_alleles = lambda x: re.sub('[-|*|:]', '', x)
 
 def select_by_allele(data, allele):
     """Get data for specific allele
