@@ -306,6 +306,7 @@ lr_sch = LearningRateScheduler(scheduler)
 
 print("Training...")
 for epoch in range(1, EPOCHS+1):
+    print(model.optimizer.lr.get_value())
     history = model.fit_generator(generate_batch([X_mhc_train, X_pep_train], y_train, BATCH_SIZE, indices_strong, indices_weak), 
                                   validation_data = ([X_mhc_test, X_pep_test], y_test),
                                   steps_per_epoch = int(X_mhc_train.shape[0] / BATCH_SIZE),
