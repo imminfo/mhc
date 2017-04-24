@@ -1,16 +1,5 @@
 from __future__ import print_function, division
 
-from keras.models import Model, load_model
-from keras.layers import Dense, Activation, Dropout
-from keras.layers import LSTM, GRU, Bidirectional, Input, Conv1D, average
-from keras.layers.core import Flatten
-from keras.layers.convolutional import Conv1D
-from keras.layers.pooling import MaxPooling1D, GlobalAveragePooling1D, GlobalMaxPooling1D
-from keras.layers.normalization import BatchNormalization
-from keras.optimizers import Nadam
-from keras.layers.embeddings import Embedding
-from keras.layers.merge import concatenate
-from keras.layers.advanced_activations import PReLU
 from keras.utils.data_utils import get_file
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, LearningRateScheduler
 import shutil
@@ -31,8 +20,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pylab
 import os
+import gensim
 
-from mhcmodel import *
+from local_models import *
 from batch_generator import *
 
 
@@ -44,7 +34,7 @@ BIND_THR = 1 - np.log(500) / np.log(50000)
 
 VERBOSE=2
 BATCH_SIZE=16
-EPOCHS=300
+EPOCHS=50
 POOL_SIZE=2
 
 #theano.config.floatX="float32"
@@ -81,7 +71,7 @@ def read_df(filepath):
     df = df.loc[df.mhc != "HLAB60", :]
     
     # df = df.ix[(df["mhc"] == "HLAA0101") | (df["mhc"] == "HLAA0201"), :]
-    # df = df.ix[df["mhc"] == "HLAA0101", :]
+    df = df.ix[df["mhc"] == "HLAA0203", :]
     # df.reset_index(inplace=True, drop=True)
     #HLAB4601
     #HLAA8001
@@ -89,21 +79,20 @@ def read_df(filepath):
     return df
 
 
-def vectorize_mhc(seq_vec, name_vec, max_len, chars):
-    res = {}
-    for i, seq in enumerate(seq_vec):
-        res[name_vec[i]] = np.zeros((max_len, len(chars)), dtype=np.bool)
-        for row, char in enumerate(seq):
-            res[name_vec[i]][row, char_indices[char]] = 1
-    return res
+w2v_model = gensim.models.Word2Vec.load("w2v_models/up9mers_size_20_window_3.pkl")
 
+
+from numpy.linalg import norm
 
 def vectorize_xy(seq_vec, affin_vec, max_len, chars):
-    X = np.zeros((len(seq_vec), max_len, len(chars)), dtype=np.bool)
+    # X = np.zeros((len(seq_vec), max_len, len(chars)), dtype=np.bool)
+    X = np.zeros((len(seq_vec), max_len, 20), dtype=np.float32)
     y = affin_vec
     for i, seq in enumerate(seq_vec):
         for row, char in enumerate(seq):
-            X[i, row, char_indices[char]] = 1
+            # X[i, row, char_indices[char]] = 1
+            # X[i, row, :] = w2v_model.wv[char]
+            X[i, row, :] = w2v_model.wv[char] / norm(w2v_model.wv[char])
     return X, y.reshape(len(seq_vec), 1)
 
     
@@ -211,50 +200,8 @@ weights_test = np.exp(stats.beta.pdf(y_test, a=3.75, b=5))
 ###################
 # Build the model #
 ###################
-def make_model_cnn(dir_name):
-    def _block(prev_layer, shape, mid_filters):
-        branch = BatchNormalization()(prev_layer)
-        branch = PReLU()(branch)
-        branch = Conv1D(mid_filters[0], 1, kernel_initializer="he_normal")(branch)
-        branch = Dropout(.5)(branch)
-        
-        branch = BatchNormalization()(branch)
-        branch = PReLU()(branch)
-        branch = Conv1D(mid_filters[1], 1, kernel_initializer="he_normal")(branch)
-        branch = Dropout(.5)(branch)
-        
-        branch = BatchNormalization()(branch)
-        branch = PReLU()(branch)
-        branch = Conv1D(shape[1], 1, kernel_initializer="he_normal")(branch)
-        return add([prev_layer, branch])
-    
-    pep_in = Input(shape=(9,20))
-    pep_branch = _block(pep_in, (9,20), [192, 192])
-    # pep_branch = _block(pep_in, (9,20), 256)
-    # pep_branch = _block(pep_in, (9,20), 512)
-    # pep_branch = _block(pep_in, (9,20), 512)
-    
-    # pep_branch = GRU(32, kernel_initializer="he_normal", recurrent_initializer="he_normal", 
-    #                    implementation=2, bias_initializer="he_normal",
-    #                    dropout=.2, recurrent_dropout=.2, unroll=True)(pep_branch)
-    pep_branch = Flatten()(pep_branch)
-    pep_branch = Dense(64, kernel_initializer="he_normal")(pep_branch)
-    pep_branch = BatchNormalization()(pep_branch)
-    pep_branch = PReLU()(pep_branch)
-    pep_branch = Dropout(.7)(pep_branch)
-    
-    # pep_branch = GlobalAveragePooling1D()(pep_branch)
-    
-    pep_branch = Dense(1)(pep_branch)
-    pred = PReLU()(pep_branch)
-
-    model = Model(pep_in, pred)
-    model.compile(loss='mse', optimizer="nadam")
-        
-    return model
-
 which_model, which_batch = sys.argv[1].split("_")
-make_model = make_model_cnn
+make_model = LOCAL_MODELS[which_model]
 
 dir_name = "models_local/" + sys.argv[1] + "/"
 model_list = {}
@@ -303,7 +250,7 @@ def generate_batch(X, y, batch_size, indices_strong, indices_weak):
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, cooldown=1, min_lr=0.00005)
 
 def scheduler(epoch):
-    return 0.002 * (.1 ** (epoch // 10))
+    return 0.002 * (.1 ** (epoch // 30))
 lr_sch = LearningRateScheduler(scheduler)
 
 print("Training...")

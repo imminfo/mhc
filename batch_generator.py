@@ -51,6 +51,17 @@ def generate_batch_balanced(X_list, y, batch_size, indices_strong, indices_weak)
                np.vstack([X_list[1][sampled_indices_strong], X_list[1][sampled_indices_weak]])], \
               np.vstack([y[sampled_indices_strong], y[sampled_indices_weak]])
 
+# def generate_batch_balanced(X_list, y_list, batch_size, indices_strong, indices_weak):
+#     while True:
+#         to_sample_strong = batch_size // 2
+#         to_sample_weak   = batch_size // 2
+#         sampled_indices_strong = indices_strong[randint(0, indices_strong.shape[0], size=to_sample_strong)]
+#         sampled_indices_weak   = indices_weak[randint(0, indices_weak.shape[0], size=to_sample_weak)]
+#         yield [np.vstack([X_list[0][sampled_indices_strong], X_list[0][sampled_indices_weak]]), \
+#                np.vstack([X_list[1][sampled_indices_strong], X_list[1][sampled_indices_weak]])], \
+#               [np.vstack([y_list[0][sampled_indices_strong], y_list[0][sampled_indices_weak]]), \
+#                np.vstack([y_list[1][sampled_indices_strong], y_list[1][sampled_indices_weak]])]
+
             
 # @threadsafe_generator
 def generate_batch_random(X_list, y, batch_size):

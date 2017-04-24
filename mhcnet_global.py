@@ -154,6 +154,8 @@ human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 MAX_PEP_LEN = max([len(x) for x in human_df["sequence"]])
 X_pep_train, y_train = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
+y_train_class = np.zeros(y_train.shape)
+y_train_class[np.array(y_train >= BIND_THR)] = 1
 X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
 # X_mhc_train = np.zeros((X_pep_train.shape[0], MAX_MHC_LEN, 80), dtype=np.float32)
 for i, mhc in enumerate(human_df["mhc"]):
@@ -186,6 +188,8 @@ human_df = df.loc[df.species == "human", :]
 human_df = human_df.loc[human_df.peptide_length == 9, :]
 
 X_pep_test, y_test = vectorize_xy(human_df["sequence"], human_df["meas"], MAX_PEP_LEN, chars)
+y_test_class = np.zeros(y_test.shape)
+y_test_class[np.array(y_test >= BIND_THR)] = 1
 X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, len(chars)), dtype=np.bool)
 # X_mhc_test = np.zeros((X_pep_test.shape[0], MAX_MHC_LEN, 80), dtype=np.float32)
 for i, mhc in enumerate(human_df["mhc"]):
@@ -301,7 +305,7 @@ else:
 
 reduce_lr = ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=3, cooldown=1, min_lr=0.000005)
 def scheduler(epoch):
-    return 0.002 * (.1 ** (epoch // 20))
+    return 0.003 * (.1 ** (epoch // 50))
 lr_sch = LearningRateScheduler(scheduler)
 
 print("Training...")
