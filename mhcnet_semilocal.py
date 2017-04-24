@@ -22,7 +22,7 @@ import re
 import pandas as pd
 import theano
 from scipy import sparse
-import scipy.stats as stats 
+import scipy.stats as stats
 from sklearn.metrics import mean_squared_error, f1_score, roc_auc_score, confusion_matrix
 import keras.backend as K
 import matplotlib
@@ -31,7 +31,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pylab
 import os
-
+from mhystic.preprocessing import unify_alleles
 from mhcmodel import *
 from batch_generator import *
 
@@ -40,10 +40,8 @@ sys.setrecursionlimit(10000)
 
 
 BIND_THR = 1 - np.log(500) / np.log(50000)
-ALLELE_TRAIN = "HLAA0101"
-ALLELE_TEST = "HLAA
-
-
+ALLELE_TRAIN = "HLAA0201"
+ALLELE_TEST = "HLAB0702"
 VERBOSE=2
 BATCH_SIZE=16
 EPOCHS=300
@@ -53,15 +51,13 @@ POOL_SIZE=2
 #theano.config.device="gpu1"
 #theano.config.lib.cnmem="1."
 
-def read_df(filepath):
+def read_df(filepath, user_def=None):
     df = pd.read_table(filepath, sep="\t")
 
     df.loc[df.meas > 50000, "meas"] = 50000
     df.meas = 1 - np.log(df.meas) / np.log(50000)
-    
-    df.mhc = list(map(lambda x: x.replace("-", ""), df.mhc))
-    df.mhc = list(map(lambda x: x.replace(":", ""), df.mhc))
-    df.mhc = list(map(lambda x: x.replace("*", ""), df.mhc))
+
+    df.mhc = df.mhc.apply(unify_alleles)
 
     df.loc[df.mhc == "HLAA1", "mhc"] = "HLAA0101"
     df.loc[df.mhc == "HLAA11", "mhc"] = "HLAA0101"
@@ -81,14 +77,16 @@ def read_df(filepath):
     df.loc[df.mhc == "HLACw4", "mhc"] = "HLAC0401"
 
     df = df.loc[df.mhc != "HLAB60", :]
-    
+
     # df = df.ix[(df["mhc"] == "HLAA0101") | (df["mhc"] == "HLAA0201"), :]
     # df = df.ix[df["mhc"] == "HLAA0101", :]
     # df.reset_index(inplace=True, drop=True)
     #HLAB4601
     #HLAA8001
-    
-    return df
+    if user_def:
+        return df.loc[df.mhc == user_def]
+    else:
+        return df
 
 
 def vectorize_mhc(seq_vec, name_vec, max_len, chars):
@@ -108,7 +106,7 @@ def vectorize_xy(seq_vec, affin_vec, max_len, chars):
             X[i, row, char_indices[char]] = 1
     return X, y.reshape(len(seq_vec), 1)
 
-    
+
 #####################
 # Prepare the chars #
 #####################
@@ -130,7 +128,7 @@ mhc_vec = mhc_df["mhc"].unique()
 mhc_map = {}
 for mhc_i in range(len(mhc_df)):
     mhc_map[mhc_df["mhc"][mhc_i]] = mhc_df["pseudo"][mhc_i]
-    
+
 rev_mhc_map = {}
 for mhc_i in range(len(mhc_df)):
     if mhc_df["pseudo"][mhc_i] not in rev_mhc_map:
@@ -143,7 +141,7 @@ for mhc_i in range(len(mhc_df)):
 # Load the training data #
 ##########################
 print("Load train...", end = "")
-df = read_df("data/bdata.2009.tsv")
+df = read_df("data/bdata.2009.tsv", ALLELE_TRAIN)
 human_df = df.loc[df.species == "human", :]
 human_df = human_df.loc[human_df.peptide_length == 9, :]
 
@@ -183,7 +181,7 @@ weights_train = np.exp(stats.beta.pdf(y_train, a=3.75, b=5))
 # Load the CV data #
 ####################
 print("Load CV...", end = "")
-df = read_df("data/blind.tsv")
+df = read_df("data/blind.tsv", ALLELE_TEST)
 human_df = df.loc[df.species == "human", :]
 human_df = human_df.loc[human_df.peptide_length == 9, :]
 
@@ -219,24 +217,24 @@ def make_model_cnn(dir_name):
         branch = PReLU()(branch)
         branch = Conv1D(mid_filters[0], 1, kernel_initializer="he_normal")(branch)
         branch = Dropout(.5)(branch)
-        
+
         branch = BatchNormalization()(branch)
         branch = PReLU()(branch)
         branch = Conv1D(mid_filters[1], 1, kernel_initializer="he_normal")(branch)
         branch = Dropout(.5)(branch)
-        
+
         branch = BatchNormalization()(branch)
         branch = PReLU()(branch)
         branch = Conv1D(shape[1], 1, kernel_initializer="he_normal")(branch)
         return add([prev_layer, branch])
-    
+
     pep_in = Input(shape=(9,20))
     pep_branch = _block(pep_in, (9,20), [192, 192])
     # pep_branch = _block(pep_in, (9,20), 256)
     # pep_branch = _block(pep_in, (9,20), 512)
     # pep_branch = _block(pep_in, (9,20), 512)
-    
-    # pep_branch = GRU(32, kernel_initializer="he_normal", recurrent_initializer="he_normal", 
+
+    # pep_branch = GRU(32, kernel_initializer="he_normal", recurrent_initializer="he_normal",
     #                    implementation=2, bias_initializer="he_normal",
     #                    dropout=.2, recurrent_dropout=.2, unroll=True)(pep_branch)
     pep_branch = Flatten()(pep_branch)
@@ -244,21 +242,21 @@ def make_model_cnn(dir_name):
     pep_branch = BatchNormalization()(pep_branch)
     pep_branch = PReLU()(pep_branch)
     pep_branch = Dropout(.7)(pep_branch)
-    
+
     # pep_branch = GlobalAveragePooling1D()(pep_branch)
-    
+
     pep_branch = Dense(1)(pep_branch)
     pred = PReLU()(pep_branch)
 
     model = Model(pep_in, pred)
     model.compile(loss='mse', optimizer="nadam")
-        
+
     return model
 
 which_model, which_batch = sys.argv[1].split("_")
 make_model = make_model_cnn
 
-dir_name = "models_local/" + sys.argv[1] + "/"
+dir_name = "models_semilocal/" + sys.argv[1] + "/"
 model_list = {}
 if len(sys.argv) > 2:
     if sys.argv[2] == "-r":
@@ -277,7 +275,7 @@ else:
     else:
         print(dir_name, "exists! Remove / rename it to proceed. Exiting...")
         sys.exit()
-    
+
 print("Building models...")
 for ps_i, ps in enumerate(ps_uniq):
     # print(ps_i, "/", len(ps_uniq) + 1, " - ", ps)
@@ -300,7 +298,7 @@ def generate_batch(X, y, batch_size, indices_strong, indices_weak):
         sampled_indices_weak   = indices_weak[randint(0, indices_weak.shape[0], size=to_sample_weak)]
         yield np.vstack([X[sampled_indices_strong], X[sampled_indices_weak]]), \
               np.vstack([y[sampled_indices_strong], y[sampled_indices_weak]])
-            
+
 
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, cooldown=1, min_lr=0.00005)
 
@@ -312,23 +310,23 @@ print("Training...")
 for epoch in range(1, EPOCHS+1):
     print("Epoch:", epoch)
     y_pred = np.zeros(y_test.shape)
-    
+
     for ps_i, ps in enumerate(ps_uniq):
         print(ps_i+1, "/", len(ps_uniq)+1, end="\t")
         print(rev_mhc_map[ps], end = "\t")
         print(indices_strong[ps].shape[0], "+", indices_weak[ps].shape[0], " ", indices_test[ps].shape[0])#, end="\t", sep="")
         # print(model_list[ps].optimizer.lr.get_value())
-        model_list[ps].fit_generator(generate_batch(X_pep_train, y_train, BATCH_SIZE, indices_strong[ps], indices_weak[ps]), 
+        model_list[ps].fit_generator(generate_batch(X_pep_train, y_train, BATCH_SIZE, indices_strong[ps], indices_weak[ps]),
                                      steps_per_epoch=800,
                                      epochs=epoch, verbose=VERBOSE, validation_data=(X_pep_test[indices_test[ps]], y_test[indices_test[ps]]),
                                      initial_epoch=epoch-1, callbacks=[reduce_lr, lr_sch])
                                      #callbacks=[ModelCheckpoint(filepath = dir_name + "model." + str(epoch % 2) + ".hdf5")])
-        
-        
+
+
         ####
 #         y2_pred = model_list[ps].predict(np.vstack([X_pep_train[indices_strong[ps]], X_pep_train[indices_weak[ps]]]))
 #         y2_test = np.vstack([y_train[indices_strong[ps]], y_train[indices_weak[ps]]])
-        
+
 #         y2_true_clf = np.zeros(y2_test.shape)
 #         y2_true_clf[np.array(y2_test >= BIND_THR)] = 1
 
@@ -336,12 +334,12 @@ for epoch in range(1, EPOCHS+1):
 #         y2_pred_clf[np.array(y2_pred >= BIND_THR)] = 1
 
 #         print("[train] F1:", f1_score(y2_true_clf, y2_pred_clf))
-        
+
         ####
         y2_pred = model_list[ps].predict(X_pep_test[indices_test[ps]])
         y2_test = y_test[indices_test[ps]]
         y_pred[indices_test[ps]] = y2_pred
-        
+
         y2_true_clf = np.zeros(y2_test.shape)
         y2_true_clf[np.array(y2_test >= BIND_THR)] = 1
 
@@ -349,34 +347,34 @@ for epoch in range(1, EPOCHS+1):
         y2_pred_clf[np.array(y2_pred >= BIND_THR)] = 1
 
         print("[test] F1:", f1_score(y2_true_clf, y2_pred_clf))
-        
+
         with open(dir_name + "history.f1." + ",".join(rev_mhc_map[ps]) + ".txt", "a" if epoch > 1 else "w") as hist_file:
             hist_file.writelines(str(f1_score(y2_true_clf, y2_pred_clf)) + "\n")
 
         y2_pred_tr = model_list[ps].predict(X_pep_train[indices_train[ps]])
-        
+
         with open(dir_name + "pred_tr.txt", "wb") as pred_file:
             np.savetxt(pred_file, y2_pred_tr)
         with open(dir_name + "pred.txt", "wb") as pred_file:
             np.savetxt(pred_file, y2_pred)
-    
+
     #
     # =========================
     #
-    
+
     print("\n==============\n")
-    
+
     y_true_clf = np.zeros(y_test.shape)
     y_true_clf[np.array(y_test >= BIND_THR)] = 1
 
     y_pred_clf = np.zeros(y_pred.shape)
     y_pred_clf[np.array(y_pred >= BIND_THR)] = 1
-    
+
     print("F1:", f1_score(y_true_clf, y_pred_clf))
     print("AUC:", roc_auc_score(y_true_clf, y_pred_clf))
     print(confusion_matrix(y_true_clf, y_pred_clf))
     print()
-    
+
     with open(dir_name + "history.f1.txt", "a" if epoch > 1 else "w") as hist_file:
         hist_file.writelines(str(f1_score(y_true_clf, y_pred_clf)) + "\n")
     with open(dir_name + "history.auc.txt", "a" if epoch > 1 else "w") as hist_file:
